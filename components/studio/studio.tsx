@@ -9,7 +9,7 @@ import { ExportDialog } from "@/components/studio/export-dialog";
 import { Inspector } from "@/components/studio/inspector";
 import { LeftPanel } from "@/components/studio/left-panel";
 import { Toolbar } from "@/components/studio/toolbar";
-import { useImportFiles } from "@/components/studio/use-import";
+import { filesFromClipboard, useImportFiles } from "@/components/studio/use-import";
 import { usePersistence } from "@/components/studio/use-persistence";
 import { useStudio } from "@/lib/store";
 
@@ -29,9 +29,22 @@ function isTypingTarget(target: EventTarget | null): boolean {
 
 function StudioShell() {
   const { status, error } = useEngine();
-  const { openPicker } = useImportFiles();
+  const { openPicker, importFiles } = useImportFiles();
   const { restoring } = usePersistence();
   const uiHidden = useStudio((s) => s.uiHidden);
+
+  React.useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (isTypingTarget(e.target)) return;
+      if (useStudio.getState().exportOpen) return;
+      const files = filesFromClipboard(e.clipboardData);
+      if (files.length === 0) return;
+      e.preventDefault();
+      void importFiles(files);
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [importFiles]);
 
   React.useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -48,13 +61,6 @@ function StudioShell() {
         return;
       }
       if (s.exportOpen) return;
-
-      // Figma: ⌘\ toggles the UI.
-      if (mod && (e.key === "\\" || e.code === "Backslash")) {
-        e.preventDefault();
-        s.toggleUi();
-        return;
-      }
 
       if (mod && e.key.toLowerCase() === "i") {
         e.preventDefault();
@@ -87,6 +93,9 @@ function StudioShell() {
         s.setTool("select");
       } else if (e.key.toLowerCase() === "h") {
         s.setTool("hand");
+      } else if (e.shiftKey && e.code === "KeyG") {
+        e.preventDefault();
+        s.toggleUi();
       } else if (e.shiftKey && e.code === "Digit1") {
         s.fitAll();
       } else if (e.shiftKey && e.code === "Digit2") {
@@ -136,7 +145,6 @@ function StudioShell() {
 
 /** Small reminder while the UI is hidden; fades unless hovered. */
 function HiddenUiHint({ onShow }: { onShow: () => void }) {
-  const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
   return (
     <button
       type="button"
@@ -145,7 +153,7 @@ function HiddenUiHint({ onShow }: { onShow: () => void }) {
     >
       <Eye className="size-3.5" />
       Show UI
-      <kbd className="rounded bg-muted px-1 font-mono text-[10px]">{isMac ? "⌘\\" : "Ctrl+\\"}</kbd>
+      <kbd className="rounded bg-muted px-1 font-mono text-[10px]">⇧G</kbd>
     </button>
   );
 }

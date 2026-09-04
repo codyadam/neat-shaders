@@ -5,9 +5,13 @@ import { toast } from "sonner";
 import { loadAsset, kindForFile } from "@/lib/gpu/media";
 import { persistAssetFile } from "@/lib/persistence";
 import { useStudio, viewportCenterWorld } from "@/lib/store";
+import type { AssetKind } from "@/lib/types";
 import { truncateName } from "@/lib/utils";
 
 export const ACCEPTED_TYPES = "image/*,video/*";
+
+/** OS / browser clipboard images often arrive as a generic `image.png` (or no name). */
+const GENERIC_CLIPBOARD_NAME = /^(image|picture|untitled|download|unknown)?(\.(png|jpe?g|gif|webp|bmp|avif|mp4|webm|mov|m4v))?$/i;
 
 export interface ImportTarget {
   /** World-space point the media should be centered on. Defaults to the viewport center. */
@@ -15,6 +19,55 @@ export interface ImportTarget {
   y?: number;
   /** Also create a frame for each asset (default true). */
   placeFrames?: boolean;
+}
+
+/**
+ * Collects image/video files from a paste or drop DataTransfer.
+ * Screenshots and copied bitmaps show up on `items`, not always on `files`.
+ */
+export function filesFromClipboard(data: DataTransfer | null): File[] {
+  if (!data) return [];
+  const raw: File[] = [];
+  const seen = new Set<string>();
+
+  const push = (file: File | null, fallbackType?: string) => {
+    if (!file) return;
+    const typed =
+      file.type || !fallbackType
+        ? file
+        : new File([file], file.name, { type: fallbackType, lastModified: file.lastModified });
+    const key = `${typed.name}\0${typed.size}\0${typed.type}\0${typed.lastModified}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    raw.push(typed);
+  };
+
+  for (const file of Array.from(data.files)) push(file);
+  for (const item of Array.from(data.items)) {
+    if (item.kind === "file") push(item.getAsFile(), item.type);
+  }
+
+  const supported = raw.filter((f) => kindForFile(f));
+  return supported.map((file, i) => nameClipboardFile(file, i));
+}
+
+function nameClipboardFile(file: File, index: number): File {
+  const kind = kindForFile(file);
+  const name = file.name.trim();
+  if (!kind || (name && !GENERIC_CLIPBOARD_NAME.test(name))) return file;
+  const ext = extensionForClipboardFile(file, kind);
+  const suffix = index === 0 ? "" : ` ${index + 1}`;
+  const labeled = `${kind === "video" ? "Pasted video" : "Pasted image"}${suffix}.${ext}`;
+  return new File([file], labeled, { type: file.type, lastModified: file.lastModified || Date.now() });
+}
+
+function extensionForClipboardFile(file: File, kind: AssetKind): string {
+  const fromName = file.name.split(".").pop()?.toLowerCase();
+  if (fromName && fromName !== file.name.toLowerCase()) return fromName;
+  const mime = file.type.split("/")[1]?.split(";")[0]?.split("+")[0];
+  if (mime === "jpeg") return "jpg";
+  if (mime) return mime;
+  return kind === "video" ? "mp4" : "png";
 }
 
 export function useImportFiles() {

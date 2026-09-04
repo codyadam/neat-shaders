@@ -77,13 +77,14 @@ function EmptyInspector() {
             ["Zoom", "⌘ + wheel · pinch"],
             ["Select / Hand", "V · H"],
             ["Import", "⌘ I"],
+            ["Paste image", "⌘ V"],
             ["Export", "⌘ E"],
             ["Duplicate", "⌘ D"],
             ["Delete", "⌫"],
             ["Zoom to fit", "⇧ 1"],
             ["Zoom to selection", "⇧ 2"],
             ["Zoom 100%", "⇧ 0"],
-            ["Hide / show UI", "⌘ \\"],
+            ["Hide / show UI", "⇧ G"],
           ].map(([k, v]) => (
             <React.Fragment key={k}>
               <dt className="text-muted-foreground">{k}</dt>
