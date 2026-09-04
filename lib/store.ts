@@ -21,6 +21,8 @@ interface StudioState {
   tool: Tool;
   spaceHeld: boolean;
   exportOpen: boolean;
+  /** Hide every panel and canvas chrome to look at the result alone (Figma's ⌘\). */
+  uiHidden: boolean;
 
   addAsset: (asset: Asset) => void;
   removeAsset: (id: string) => void;
@@ -53,6 +55,8 @@ interface StudioState {
   fitAll: () => void;
   fitSelection: () => void;
   setExportOpen: (open: boolean) => void;
+  setUiHidden: (hidden: boolean) => void;
+  toggleUi: () => void;
   viewSize: { w: number; h: number };
 }
 
@@ -101,6 +105,7 @@ export const useStudio = create<StudioState>((set, get) => ({
   tool: "select",
   spaceHeld: false,
   exportOpen: false,
+  uiHidden: false,
   viewSize: { w: 1200, h: 800 },
 
   addAsset: (asset) => set((s) => ({ assets: [...s.assets, asset] })),
@@ -237,6 +242,8 @@ export const useStudio = create<StudioState>((set, get) => ({
   },
 
   setExportOpen: (open) => set({ exportOpen: open }),
+  setUiHidden: (hidden) => set({ uiHidden: hidden }),
+  toggleUi: () => set((s) => ({ uiHidden: !s.uiHidden })),
 }));
 
 /** Places a frame at the viewport center; used by imports that do not come from a drop. */

@@ -47,6 +47,7 @@ export function CanvasViewport() {
   const viewport = useStudio((s) => s.viewport);
   const tool = useStudio((s) => s.tool);
   const spaceHeld = useStudio((s) => s.spaceHeld);
+  const uiHidden = useStudio((s) => s.uiHidden);
   const panMode = tool === "hand" || spaceHeld;
 
   React.useEffect(() => {
@@ -271,8 +272,8 @@ export function CanvasViewport() {
         />
       ))}
 
-      {/* Overlay: labels and selection chrome in screen space. */}
-      <div className="pointer-events-none absolute inset-0">
+      {/* Overlay: labels and selection chrome in screen space. Dropped while the UI is hidden. */}
+      <div className="pointer-events-none absolute inset-0" hidden={uiHidden}>
         {frames.map((f) => {
           if (!f.visible) return null;
           const s = toScreen(f);

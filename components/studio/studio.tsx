@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { AlertTriangle, Eye, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CanvasViewport } from "@/components/studio/canvas-viewport";
 import { EngineProvider, useEngine } from "@/components/studio/engine-context";
@@ -31,6 +31,7 @@ function StudioShell() {
   const { status, error } = useEngine();
   const { openPicker } = useImportFiles();
   const { restoring } = usePersistence();
+  const uiHidden = useStudio((s) => s.uiHidden);
 
   React.useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -47,6 +48,13 @@ function StudioShell() {
         return;
       }
       if (s.exportOpen) return;
+
+      // Figma: ⌘\ toggles the UI.
+      if (mod && (e.key === "\\" || e.code === "Backslash")) {
+        e.preventDefault();
+        s.toggleUi();
+        return;
+      }
 
       if (mod && e.key.toLowerCase() === "i") {
         e.preventDefault();
@@ -107,9 +115,9 @@ function StudioShell() {
 
   return (
     <div className="flex h-dvh flex-col bg-background text-foreground">
-      <Toolbar />
+      {!uiHidden && <Toolbar />}
       <div className="flex min-h-0 flex-1">
-        <LeftPanel />
+        {!uiHidden && <LeftPanel />}
         <main className="relative min-w-0 flex-1">
           <CanvasViewport />
           {status !== "ready" ? (
@@ -117,11 +125,28 @@ function StudioShell() {
           ) : (
             restoring && <BusyGate label="Restoring your workspace…" />
           )}
+          {uiHidden && <HiddenUiHint onShow={() => useStudio.getState().setUiHidden(false)} />}
         </main>
-        <Inspector />
+        {!uiHidden && <Inspector />}
       </div>
       <ExportDialog />
     </div>
+  );
+}
+
+/** Small reminder while the UI is hidden; fades unless hovered. */
+function HiddenUiHint({ onShow }: { onShow: () => void }) {
+  const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+  return (
+    <button
+      type="button"
+      onClick={onShow}
+      className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border bg-background/80 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur transition-opacity hover:text-foreground hover:opacity-100 [@media(hover:hover)]:opacity-40"
+    >
+      <Eye className="size-3.5" />
+      Show UI
+      <kbd className="rounded bg-muted px-1 font-mono text-[10px]">{isMac ? "⌘\\" : "Ctrl+\\"}</kbd>
+    </button>
   );
 }
 

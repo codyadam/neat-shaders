@@ -1,7 +1,18 @@
 "use client";
 
 import * as React from "react";
-import { Download, Hand, Maximize2, Minus, MousePointer2, Plus, Sparkles, Trash2, Upload } from "lucide-react";
+import {
+  Download,
+  EyeOff,
+  Hand,
+  Maximize2,
+  Minus,
+  MousePointer2,
+  Plus,
+  Sparkles,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -60,6 +71,7 @@ export function Toolbar() {
   const hasFrames = useStudio((s) => s.frames.length > 0);
   const selectedId = useStudio((s) => s.selectedId);
   const setExportOpen = useStudio((s) => s.setExportOpen);
+  const toggleUi = useStudio((s) => s.toggleUi);
   const { openPicker, busy } = useImportFiles();
   const { status } = useEngine();
   const saveStatus = usePersistenceStatus();
@@ -179,6 +191,12 @@ export function Toolbar() {
       </div>
 
       <Separator orientation="vertical" className="mx-1 h-6!" />
+
+      <Hint label="Hide UI" shortcut="⌘\">
+        <Button variant="ghost" size="icon-sm" aria-label="Hide UI" onClick={toggleUi}>
+          <EyeOff />
+        </Button>
+      </Hint>
 
       <Hint label="Clear workspace">
         <Button
