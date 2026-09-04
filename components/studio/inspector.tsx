@@ -42,7 +42,7 @@ function Section({
 export function Inspector() {
   const frame = useStudio(selectSelectedFrame);
   return (
-    <aside className="flex w-72 shrink-0 flex-col border-l bg-background">
+    <aside className="flex min-h-0 w-72 shrink-0 flex-col overflow-hidden border-l bg-background">
       {frame ? <FrameInspector frame={frame} /> : <EmptyInspector />}
     </aside>
   );
@@ -50,7 +50,7 @@ export function Inspector() {
 
 function EmptyInspector() {
   return (
-    <ScrollArea className="h-full">
+    <ScrollArea className="min-h-0 flex-1">
       <Section title="Shaders">
         <ul className="space-y-2">
           {SHADERS.map((s) => (
@@ -100,7 +100,7 @@ function FrameInspector({ frame }: { frame: Frame }) {
   const { setFrameShader, setFrameParam, resetFrameParams, setExportOpen } = useStudio.getState();
 
   return (
-    <ScrollArea className="h-full">
+    <ScrollArea className="min-h-0 flex-1">
       <FrameSection frame={frame} asset={asset} />
       <Separator />
       {asset && <MediaSection frame={frame} asset={asset} />}

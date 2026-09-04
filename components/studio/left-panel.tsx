@@ -31,7 +31,7 @@ import { cn } from "@/lib/utils";
 
 export function LeftPanel() {
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r bg-background">
+    <aside className="flex min-h-0 w-64 shrink-0 flex-col overflow-hidden border-r bg-background">
       <Tabs defaultValue="layers" className="flex min-h-0 flex-1 flex-col gap-0">
         <TabsList variant="line" className="h-10 w-full justify-start rounded-none border-b px-2">
           <TabsTrigger value="layers" className="flex-none px-2">
@@ -41,10 +41,10 @@ export function LeftPanel() {
             Assets
           </TabsTrigger>
         </TabsList>
-        <TabsContent value="layers" className="min-h-0 flex-1">
+        <TabsContent value="layers" className="flex min-h-0 flex-1 flex-col">
           <LayersTab />
         </TabsContent>
-        <TabsContent value="assets" className="min-h-0 flex-1">
+        <TabsContent value="assets" className="flex min-h-0 flex-1 flex-col">
           <AssetsTab />
         </TabsContent>
       </Tabs>
@@ -62,7 +62,7 @@ function LayersTab() {
     );
   }
   return (
-    <ScrollArea className="h-full">
+    <ScrollArea className="min-h-0 flex-1">
       <ul className="p-1.5">
         {ordered.map((f) => (
           <LayerRow key={f.id} frame={f} />
@@ -196,7 +196,7 @@ function AssetsTab() {
   const { status } = useEngine();
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center justify-between border-b px-3 py-2">
         <span className="text-xs text-muted-foreground">
           {assets.length} {assets.length === 1 ? "asset" : "assets"}
