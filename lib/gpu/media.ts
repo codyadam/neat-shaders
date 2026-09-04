@@ -40,6 +40,8 @@ export function kindForFile(file: File): AssetKind | null {
 }
 
 const THUMB_SIZE = 96;
+/** Conservative WebGPU `maxTextureDimension2D`; larger images are downscaled at import. */
+const MAX_TEXTURE_DIM = 8192;
 
 function thumbnailFrom(source: CanvasImageSource, width: number, height: number): string {
   const scale = Math.min(1, THUMB_SIZE / Math.max(width, height));
@@ -60,7 +62,19 @@ export async function loadAsset(file: File): Promise<Asset> {
   const url = URL.createObjectURL(file);
 
   if (kind === "image") {
-    const bitmap = await createImageBitmap(file, { colorSpaceConversion: "default" });
+    let bitmap = await createImageBitmap(file, { colorSpaceConversion: "default" });
+    const largest = Math.max(bitmap.width, bitmap.height);
+    if (largest > MAX_TEXTURE_DIM) {
+      // Larger than any WebGPU texture may be; resample once at import time.
+      const scale = MAX_TEXTURE_DIM / largest;
+      const resized = await createImageBitmap(bitmap, {
+        resizeWidth: Math.max(1, Math.round(bitmap.width * scale)),
+        resizeHeight: Math.max(1, Math.round(bitmap.height * scale)),
+        resizeQuality: "high",
+      });
+      bitmap.close();
+      bitmap = resized;
+    }
     registry.set(id, { kind, bitmap, width: bitmap.width, height: bitmap.height });
     return {
       id,
