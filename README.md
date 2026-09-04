@@ -14,7 +14,8 @@ Built with Next.js (App Router), React, Tailwind CSS, shadcn/ui and [vgpu](https
   - **Kuwahara**: sector-based Kuwahara filter ported from the Godot `canvas_item` shader (`kernel_spread`, `radius`, `canvas_scale`, `edge_clamp`).
   - **Pixelate**: mosaic + posterize + optional tint, as an example of the parameter system.
   - **Dot grid**: halftone dot field that enters as a staggered wave (rows / columns / diagonal / radial / random order), then idles with a roaming highlight that swells nearby dots. Dot size can follow the source luminance, dots can take the source colour, and shape, pitch, padding, colours, loop and highlight timing are all tunable.
-  - **Lit surface**: a soft light sweeping over the media on a looping path (linear, diagonal, bounce, orbit, figure eight or static) with reveal / glow / wash blending, optional tiles with shimmer, periodic ripples emitted from the light, and Sobel edge highlights.
+  - **Halftone**: fixed-grid dot halftone driven by luminance. Dot size follows darkness (or brightness when inverted), a luma threshold skips background cells, optional minimum dot, tint or quantised source colour (1–8 bits/channel), shapes, softness, background and source backdrop.
+  - **Lit surface**: hashed rounded cells on a spacing grid that light up around a focus — brighter cells grow, pick a colour from a palette derived from the main colour and split chromatically along the radial direction, composited additively (or normally). The focus can sweep along a path (linear, diagonal, bounce, orbit, figure eight), sit still, or flood the whole field; optional ripples travel out from the focus as a crest with inverse glow and suppression.
   - **Original**: passthrough for A/B comparison.
 - Export:
   - Images: PNG, JPEG or WebP, at 0.25×–8× of the source resolution, rendered offscreen and read back from the GPU (independent of on-canvas zoom).
