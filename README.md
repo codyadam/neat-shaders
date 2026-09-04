@@ -7,7 +7,7 @@ Built with Next.js (App Router), React, Tailwind CSS, shadcn/ui and [vgpu](https
 ## Features
 
 - Infinite canvas with pan (Space + drag, wheel, hand tool), zoom (⌘/Ctrl + wheel, pinch, shortcuts), zoom-to-fit and zoom-to-selection.
-- Hide the UI with ⌘\ / Ctrl+\ (same as Figma) or the eye button in the toolbar to look at the result alone; panning and zooming keep working, and a small pill brings the UI back.
+- Hide the UI with Shift+G or the eye button in the toolbar to look at the result alone; panning and zooming keep working, and a small pill brings the UI back.
 - Frames: each imported image or video becomes a frame you can select, move, resize (aspect-locked corner handles), rename, reorder, hide and lock. Import by dropping files on the canvas, pasting an image (⌘/Ctrl+V — screenshots and copied bitmaps included), or the Import button (⌘/Ctrl+I).
 - Assets panel: imported media, drag an asset onto the canvas to make another frame from it.
 - Inspector: frame geometry, media info, video playback controls (play/pause, loop, scrub), shader picker and typed parameter controls (float, int, vec2, bool, color).

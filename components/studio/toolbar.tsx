@@ -192,7 +192,7 @@ export function Toolbar() {
 
       <Separator orientation="vertical" className="mx-1 h-6!" />
 
-      <Hint label="Hide UI" shortcut="⌘\">
+      <Hint label="Hide UI" shortcut="⇧G">
         <Button variant="ghost" size="icon-sm" aria-label="Hide UI" onClick={toggleUi}>
           <EyeOff />
         </Button>

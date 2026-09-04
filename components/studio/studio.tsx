@@ -62,13 +62,6 @@ function StudioShell() {
       }
       if (s.exportOpen) return;
 
-      // Figma: ⌘\ toggles the UI.
-      if (mod && (e.key === "\\" || e.code === "Backslash")) {
-        e.preventDefault();
-        s.toggleUi();
-        return;
-      }
-
       if (mod && e.key.toLowerCase() === "i") {
         e.preventDefault();
         void openPicker();
@@ -100,6 +93,9 @@ function StudioShell() {
         s.setTool("select");
       } else if (e.key.toLowerCase() === "h") {
         s.setTool("hand");
+      } else if (e.shiftKey && e.code === "KeyG") {
+        e.preventDefault();
+        s.toggleUi();
       } else if (e.shiftKey && e.code === "Digit1") {
         s.fitAll();
       } else if (e.shiftKey && e.code === "Digit2") {
@@ -149,7 +145,6 @@ function StudioShell() {
 
 /** Small reminder while the UI is hidden; fades unless hovered. */
 function HiddenUiHint({ onShow }: { onShow: () => void }) {
-  const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
   return (
     <button
       type="button"
@@ -158,7 +153,7 @@ function HiddenUiHint({ onShow }: { onShow: () => void }) {
     >
       <Eye className="size-3.5" />
       Show UI
-      <kbd className="rounded bg-muted px-1 font-mono text-[10px]">{isMac ? "⌘\\" : "Ctrl+\\"}</kbd>
+      <kbd className="rounded bg-muted px-1 font-mono text-[10px]">⇧G</kbd>
     </button>
   );
 }
