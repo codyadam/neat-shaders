@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -238,6 +239,26 @@ export function ParamControl({ def, value, onChange }: ParamControlProps) {
           <Switch id={`param-${def.key}`} checked={Boolean(value)} onCheckedChange={onChange} />
         </div>
       );
+    case "select": {
+      const current = def.options.some((o) => o.value === Number(value)) ? Number(value) : def.default;
+      return (
+        <div className="flex items-center justify-between gap-2">
+          <ParamLabel def={def} htmlFor={`param-${def.key}`} />
+          <Select value={String(current)} onValueChange={(v) => onChange(Number(v))}>
+            <SelectTrigger id={`param-${def.key}`} size="sm" className="h-7 w-32 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {def.options.map((o) => (
+                <SelectItem key={o.value} value={String(o.value)} className="text-xs">
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      );
+    }
     case "color": {
       const rgb = Array.isArray(value) && value.length === 3 ? value : def.default;
       const hex = rgbToHex(rgb);

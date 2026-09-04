@@ -13,6 +13,8 @@ Built with Next.js (App Router), React, Tailwind CSS, shadcn/ui and [vgpu](https
 - Shaders (WGSL, driven through vgpu effects):
   - **Kuwahara**: sector-based Kuwahara filter ported from the Godot `canvas_item` shader (`kernel_spread`, `radius`, `canvas_scale`, `edge_clamp`).
   - **Pixelate**: mosaic + posterize + optional tint, as an example of the parameter system.
+  - **Dot grid**: halftone dot field that enters as a staggered wave (rows / columns / diagonal / radial / random order), then idles with a roaming highlight that swells nearby dots. Dot size can follow the source luminance, dots can take the source colour, and shape, pitch, padding, colours, loop and highlight timing are all tunable.
+  - **Lit surface**: a soft light sweeping over the media on a looping path (linear, diagonal, bounce, orbit, figure eight or static) with reveal / glow / wash blending, optional tiles with shimmer, periodic ripples emitted from the light, and Sobel edge highlights.
   - **Original**: passthrough for A/B comparison.
 - Export:
   - Images: PNG, JPEG or WebP, at 0.25×–8× of the source resolution, rendered offscreen and read back from the GPU (independent of on-canvas zoom).
@@ -58,7 +60,9 @@ Import the repository in Vercel; the Next.js preset is detected automatically an
 
    `uv` is top-origin (0,0 = top-left), matching WebGPU textures, so sampling `src` at `uv` needs no flip.
 
-2. Register it in `lib/shaders/registry.ts` with a `params` schema. Each entry maps 1:1 onto a `Params` field: `float` → `f32`, `int` → `i32`, `bool` → `u32` (0/1), `vec2` → `vec2f`, `color` → `vec3f`. The inspector controls, defaults and uniform packing are generated from the schema.
+2. Register it in `lib/shaders/registry.ts` with a `params` schema. Each entry maps 1:1 onto a `Params` field: `float` → `f32`, `int` → `i32`, `select` (dropdown of labelled options) → `i32`, `bool` → `u32` (0/1), `vec2` → `vec2f`, `color` → `vec3f`. The inspector controls, defaults and uniform packing are generated from the schema.
+
+   Animated shaders read `params.time` (seconds since the engine started). Keep them stateless in `time` — e.g. derive loops with `fract(time / period)` — so still exports and video capture render the same thing the preview shows.
 
 3. Validate it: `npx vgpu check lib/shaders/wgsl/<name>.wgsl --require-validation`.
 
