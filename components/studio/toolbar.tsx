@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Download, Hand, Maximize2, Minus, MousePointer2, Plus, Sparkles, Upload } from "lucide-react";
+import { Download, Hand, Maximize2, Minus, MousePointer2, Plus, Sparkles, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -15,9 +15,19 @@ import { Separator } from "@/components/ui/separator";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useImportFiles } from "@/components/studio/use-import";
+import { usePersistenceStatus } from "@/components/studio/use-persistence";
+import { clearWorkspace, type PersistenceStatus } from "@/lib/persistence";
 import { useStudio } from "@/lib/store";
 import type { Tool } from "@/lib/types";
 import { useEngine } from "@/components/studio/engine-context";
+
+const SAVE_LABEL: Record<PersistenceStatus, string | null> = {
+  idle: null,
+  saving: "Saving…",
+  saved: "Saved locally",
+  error: "Not saved",
+  unavailable: "Local save unavailable",
+};
 
 function Hint({
   label,
@@ -52,6 +62,19 @@ export function Toolbar() {
   const setExportOpen = useStudio((s) => s.setExportOpen);
   const { openPicker, busy } = useImportFiles();
   const { status } = useEngine();
+  const saveStatus = usePersistenceStatus();
+  const hasAssets = useStudio((s) => s.assets.length > 0);
+  const [clearing, setClearing] = React.useState(false);
+
+  const onClear = async () => {
+    if (!confirm("Remove every frame and asset? This also wipes the workspace saved in this browser.")) return;
+    setClearing(true);
+    try {
+      await clearWorkspace();
+    } finally {
+      setClearing(false);
+    }
+  };
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b bg-background px-3">
@@ -67,6 +90,7 @@ export function Toolbar() {
               : status === "booting"
                 ? "Starting GPU…"
                 : "GPU unavailable"}
+            {SAVE_LABEL[saveStatus] && ` · ${SAVE_LABEL[saveStatus]}`}
           </div>
         </div>
       </div>
@@ -155,6 +179,18 @@ export function Toolbar() {
       </div>
 
       <Separator orientation="vertical" className="mx-1 h-6!" />
+
+      <Hint label="Clear workspace">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Clear workspace"
+          onClick={onClear}
+          disabled={!hasAssets || clearing}
+        >
+          <Trash2 />
+        </Button>
+      </Hint>
 
       <Hint label="Export selected frame" shortcut="⌘E">
         <Button size="sm" onClick={() => setExportOpen(true)} disabled={!selectedId || status !== "ready"}>
