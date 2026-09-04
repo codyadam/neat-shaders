@@ -3,6 +3,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { loadAsset, kindForFile } from "@/lib/gpu/media";
+import { persistAssetFile } from "@/lib/persistence";
 import { useStudio, viewportCenterWorld } from "@/lib/store";
 import { truncateName } from "@/lib/utils";
 
@@ -39,6 +40,15 @@ export function useImportFiles() {
           const state = useStudio.getState();
           state.addAsset(asset);
           ids.push(asset.id);
+          persistAssetFile(asset.id, file).catch((err: unknown) => {
+            toast.warning(`${truncateName(file.name)} will not survive a reload`, {
+              description:
+                err instanceof Error && err.name === "QuotaExceededError"
+                  ? "Local storage is full. Remove unused assets to free space."
+                  : "Could not store the file in this browser.",
+              id: `persist-${asset.id}`,
+            });
+          });
           if (target?.placeFrames !== false) {
             state.addFrame({
               assetId: asset.id,

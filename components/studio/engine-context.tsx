@@ -45,7 +45,7 @@ export function EngineProvider({ children }: { children: React.ReactNode }) {
           setValue({
             engine: null,
             status: "error",
-            error: `The GPU device was lost (${info.message || info.reason}). Reload the page to restart the studio; imported files will need to be added again.`,
+            error: `The GPU device was lost (${info.message || info.reason}). Reload the page to restart the studio; your workspace is saved locally and will be restored.`,
           });
         });
       })

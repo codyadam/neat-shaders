@@ -17,6 +17,7 @@ Built with Next.js (App Router), React, Tailwind CSS, shadcn/ui and [vgpu](https
   - **Halftone**: fixed-grid dot halftone driven by luminance. Dot size follows darkness (or brightness when inverted), a luma threshold skips background cells, optional minimum dot, tint or quantised source colour (1–8 bits/channel), shapes, softness, background and source backdrop.
   - **Lit surface**: hashed rounded cells on a spacing grid that light up around a focus — brighter cells grow, pick a colour from a palette derived from the main colour and split chromatically along the radial direction, composited additively (or normally). The focus can sweep along a path (linear, diagonal, bounce, orbit, figure eight), sit still, or flood the whole field; optional ripples travel out from the focus as a crest with inverse glow and suppression.
   - **Original**: passthrough for A/B comparison.
+- Local persistence: imported files are stored in the browser (IndexedDB) together with the frames, viewport and selection, and restored on the next visit, so closing the tab does not lose progress. Autosave is debounced and flushed when the page is hidden; the header shows the save state, and the trash button in the toolbar clears the workspace (including the saved copy).
 - Export:
   - Images: PNG, JPEG or WebP, at 0.25×–8× of the source resolution, rendered offscreen and read back from the GPU (independent of on-canvas zoom).
   - Videos: plays the clip once while recording the shader output with `MediaRecorder` (MP4/H.264 or WebM depending on the browser), with scale, frame rate, bitrate and optional source audio. Still-frame export is available for videos too.
@@ -78,6 +79,7 @@ lib/gpu/media.ts        Image/video decoding and the media registry
 lib/gpu/export.ts       Image encoding and MediaRecorder-based video capture
 lib/shaders/            WGSL sources and the shader registry (parameter schema)
 lib/store.ts            Zustand store: assets, frames, selection, viewport, tools
+lib/persistence.ts      IndexedDB persistence: stored files + workspace snapshot, restore on boot, debounced autosave
 ```
 
 ## Notes
