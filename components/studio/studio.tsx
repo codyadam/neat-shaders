@@ -10,6 +10,7 @@ import { Inspector } from "@/components/studio/inspector";
 import { LeftPanel } from "@/components/studio/left-panel";
 import { Toolbar } from "@/components/studio/toolbar";
 import { useImportFiles } from "@/components/studio/use-import";
+import { usePersistence } from "@/components/studio/use-persistence";
 import { useStudio } from "@/lib/store";
 
 export function Studio() {
@@ -29,6 +30,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 function StudioShell() {
   const { status, error } = useEngine();
   const { openPicker } = useImportFiles();
+  const { restoring } = usePersistence();
 
   React.useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -110,7 +112,11 @@ function StudioShell() {
         <LeftPanel />
         <main className="relative min-w-0 flex-1">
           <CanvasViewport />
-          {status !== "ready" && <GpuGate status={status} error={error} />}
+          {status !== "ready" ? (
+            <GpuGate status={status} error={error} />
+          ) : (
+            restoring && <BusyGate label="Restoring your workspace…" />
+          )}
         </main>
         <Inspector />
       </div>
@@ -119,17 +125,19 @@ function StudioShell() {
   );
 }
 
-function GpuGate({ status, error }: { status: "booting" | "unsupported" | "error"; error: string | null }) {
-  if (status === "booting") {
-    return (
-      <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-sm">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" />
-          Starting WebGPU…
-        </div>
+function BusyGate({ label }: { label: string }) {
+  return (
+    <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-sm">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="size-4 animate-spin" />
+        {label}
       </div>
-    );
-  }
+    </div>
+  );
+}
+
+function GpuGate({ status, error }: { status: "booting" | "unsupported" | "error"; error: string | null }) {
+  if (status === "booting") return <BusyGate label="Starting WebGPU…" />;
   return (
     <div className="absolute inset-0 flex items-center justify-center bg-background/80 p-6 backdrop-blur-sm">
       <div className="max-w-md rounded-2xl border bg-card p-6 shadow-lg">

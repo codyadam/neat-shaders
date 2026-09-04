@@ -54,11 +54,16 @@ function thumbnailFrom(source: CanvasImageSource, width: number, height: number)
   return canvas.toDataURL("image/jpeg", 0.7);
 }
 
+export interface LoadAssetOptions {
+  /** Reuse an existing id (restoring a persisted workspace) instead of minting one. */
+  id?: string;
+}
+
 /** Decodes a file into a GPU-uploadable media source and registers it. */
-export async function loadAsset(file: File): Promise<Asset> {
+export async function loadAsset(file: File, options: LoadAssetOptions = {}): Promise<Asset> {
   const kind = kindForFile(file);
   if (!kind) throw new Error(`Unsupported file type: ${file.name}`);
-  const id = uid("asset");
+  const id = options.id ?? uid("asset");
   const url = URL.createObjectURL(file);
 
   if (kind === "image") {
