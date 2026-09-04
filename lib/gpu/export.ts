@@ -132,9 +132,22 @@ export async function exportVideo(engine: StudioEngine, opts: VideoExportOptions
   const width = Math.max(2, Math.round(opts.width / 2) * 2);
   const height = Math.max(2, Math.round(opts.height / 2) * 2);
 
+  // A detached WebGPU canvas never presents, so automatic capture would starve. Keep the canvas in
+  // the document (visually hidden) and push frames explicitly with requestFrame().
   const canvas = document.createElement("canvas");
+  canvas.style.cssText = "position:fixed;left:0;top:0;width:2px;height:2px;opacity:0.01;pointer-events:none;";
+  document.body.appendChild(canvas);
   const exportSurface = engine.createExportSurface(canvas, width, height);
-  const stream = canvas.captureStream(opts.fps);
+  const stream = canvas.captureStream(0);
+  const videoTrack = stream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack;
+  const frameInterval = 1000 / opts.fps;
+  let lastCapture = -Infinity;
+  const captureFrame = (force = false) => {
+    const now = performance.now();
+    if (!force && now - lastCapture < frameInterval - 0.5) return;
+    lastCapture = now;
+    videoTrack.requestFrame();
+  };
 
   const wasLooping = video.loop;
   const wasMuted = video.muted;
@@ -162,6 +175,7 @@ export async function exportVideo(engine: StudioEngine, opts: VideoExportOptions
   const stopRendering = () => cancelAnimationFrame(rafId);
 
   try {
+    engine.setPreviewPaused(true);
     video.loop = false;
     video.pause();
     video.currentTime = 0;
@@ -169,11 +183,13 @@ export async function exportVideo(engine: StudioEngine, opts: VideoExportOptions
 
     engine.renderToSurface(opts.frameId, exportSurface);
     recorder.start();
+    captureFrame(true);
     await video.play();
 
     const duration = video.duration || 1;
     const tick = () => {
       engine.renderToSurface(opts.frameId, exportSurface);
+      captureFrame();
       opts.onProgress?.(Math.min(1, video.currentTime / duration));
       rafId = requestAnimationFrame(tick);
     };
@@ -182,17 +198,22 @@ export async function exportVideo(engine: StudioEngine, opts: VideoExportOptions
     await waitForEvent(video, "ended", opts.signal);
     stopRendering();
     engine.renderToSurface(opts.frameId, exportSurface);
+    captureFrame(true);
     opts.onProgress?.(1);
 
+    // Give the encoder one more interval so the final frame lands before stopping.
+    await new Promise((r) => setTimeout(r, Math.max(50, frameInterval * 2)));
     const stopped = waitForEvent(recorder, "stop");
     recorder.stop();
     await stopped;
     return new Blob(chunks, { type: opts.mimeType.split(";")[0] });
   } finally {
     stopRendering();
+    engine.setPreviewPaused(false);
     if (recorder.state !== "inactive") recorder.stop();
     for (const track of stream.getTracks()) track.stop();
     exportSurface.dispose();
+    canvas.remove();
     video.loop = wasLooping;
     video.muted = wasMuted;
     video.currentTime = previousTime;

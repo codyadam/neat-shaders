@@ -56,6 +56,7 @@ export class StudioEngine {
   private readonly errorListeners = new Set<EngineErrorListener>();
   private readonly maxDim: number;
   private disposed = false;
+  private previewPaused = false;
 
   private constructor(gpu: Gpu) {
     this.gpu = gpu;
@@ -71,6 +72,7 @@ export class StudioEngine {
     });
     const time = clock(gpu);
     this.loop = frameLoop(gpu, (f) => {
+      if (this.previewPaused) return;
       this.uploadVideoFrames();
       const t = time.time;
       for (const rt of this.frames.values()) {
@@ -85,6 +87,11 @@ export class StudioEngine {
   static async create(): Promise<StudioEngine> {
     const gpu = await init({ powerPreference: "high-performance", label: "shader-studio" });
     return new StudioEngine(gpu);
+  }
+
+  /** Skips on-canvas preview rendering, e.g. while a video export needs every frame it can get. */
+  setPreviewPaused(paused: boolean): void {
+    this.previewPaused = paused;
   }
 
   onError(cb: EngineErrorListener): () => void {
@@ -325,6 +332,14 @@ export function getEngine(): Promise<StudioEngine> {
     });
   }
   return g.__shaderStudioEngine;
+}
+
+/** Drops the cached engine so the next `getEngine()` boots a fresh device (after device loss). */
+export function resetEngine(): void {
+  const g = globalThis as EngineGlobal;
+  const current = g.__shaderStudioEngine;
+  g.__shaderStudioEngine = undefined;
+  void current?.then((engine) => engine.dispose()).catch(() => undefined);
 }
 
 export function hasWebGPU(): boolean {

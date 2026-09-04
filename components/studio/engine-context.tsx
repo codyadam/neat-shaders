@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { getEngine, hasWebGPU, StudioEngine } from "@/lib/gpu/engine";
+import { getEngine, hasWebGPU, resetEngine, StudioEngine } from "@/lib/gpu/engine";
 import { useStudio } from "@/lib/store";
 
 export type EngineStatus = "booting" | "ready" | "unsupported" | "error";
@@ -39,6 +39,15 @@ export function EngineProvider({ children }: { children: React.ReactNode }) {
         if (cancelled) return;
         engine.sync(useStudio.getState());
         setValue({ engine, status: "ready", error: null });
+        void engine.gpu.gpu.lost.then((info) => {
+          if (cancelled || info.reason === "destroyed") return;
+          resetEngine();
+          setValue({
+            engine: null,
+            status: "error",
+            error: `The GPU device was lost (${info.message || info.reason}). Reload the page to restart the studio; imported files will need to be added again.`,
+          });
+        });
       })
       .catch((err: unknown) => {
         if (cancelled) return;

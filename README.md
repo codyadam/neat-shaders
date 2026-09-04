@@ -1,36 +1,82 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Shader Studio
 
-## Getting Started
+A Figma-like canvas for applying WebGPU shaders to images and videos, then exporting the result. Drop media onto an infinite canvas, pick a shader per frame, tune its parameters live, and export a PNG/JPEG/WebP at native resolution or record the processed video.
 
-First, run the development server:
+Built with Next.js (App Router), React, Tailwind CSS, shadcn/ui and [vgpu](https://vgpu.sh) for WebGPU rendering. Everything runs client-side; there is no server component, so it deploys to Vercel as-is.
+
+## Features
+
+- Infinite canvas with pan (Space + drag, wheel, hand tool), zoom (⌘/Ctrl + wheel, pinch, shortcuts), zoom-to-fit and zoom-to-selection.
+- Frames: each imported image or video becomes a frame you can select, move, resize (aspect-locked corner handles), rename, reorder, hide and lock.
+- Assets panel: imported media, drag an asset onto the canvas to make another frame from it.
+- Inspector: frame geometry, media info, video playback controls (play/pause, loop, scrub), shader picker and typed parameter controls (float, int, vec2, bool, color).
+- Shaders (WGSL, driven through vgpu effects):
+  - **Kuwahara**: sector-based Kuwahara filter ported from the Godot `canvas_item` shader (`kernel_spread`, `radius`, `canvas_scale`, `edge_clamp`).
+  - **Pixelate**: mosaic + posterize + optional tint, as an example of the parameter system.
+  - **Original**: passthrough for A/B comparison.
+- Export:
+  - Images: PNG, JPEG or WebP, at 0.25×–8× of the source resolution, rendered offscreen and read back from the GPU (independent of on-canvas zoom).
+  - Videos: plays the clip once while recording the shader output with `MediaRecorder` (MP4/H.264 or WebM depending on the browser), with scale, frame rate, bitrate and optional source audio. Still-frame export is available for videos too.
+
+## Getting started
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000 in a WebGPU-capable browser (Chrome/Edge 113+, Safari 26+, Firefox with `dom.webgpu.enabled`).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Other scripts:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+pnpm build      # production build
+pnpm lint       # eslint
+npx vgpu check lib/shaders/wgsl/kuwahara.wgsl --require-validation   # validate a shader against a WebGPU device
+```
 
-## Learn More
+## Deploying to Vercel
 
-To learn more about Next.js, take a look at the following resources:
+Import the repository in Vercel; the Next.js preset is detected automatically and no environment variables are required.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Adding a shader
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. Add a `.wgsl` file under `lib/shaders/wgsl/`. Every shader is a fragment-only vgpu effect with these bindings:
 
-## Deploy on Vercel
+   ```wgsl
+   struct Params {
+     resolution: vec2f,   // source texture size, set by the engine
+     time: f32,           // seconds since start, set by the engine
+     // ...your parameters
+   }
+   @group(0) @binding(0) var<uniform> params: Params;
+   @group(0) @binding(1) var src: texture_2d<f32>;
+   @group(0) @binding(2) var samp: sampler;
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+   @fragment fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f { ... }
+   ```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+   `uv` is top-origin (0,0 = top-left), matching WebGPU textures, so sampling `src` at `uv` needs no flip.
+
+2. Register it in `lib/shaders/registry.ts` with a `params` schema. Each entry maps 1:1 onto a `Params` field: `float` → `f32`, `int` → `i32`, `bool` → `u32` (0/1), `vec2` → `vec2f`, `color` → `vec3f`. The inspector controls, defaults and uniform packing are generated from the schema.
+
+3. Validate it: `npx vgpu check lib/shaders/wgsl/<name>.wgsl --require-validation`.
+
+## Project layout
+
+```
+app/                    Next.js app router (layout, page, global styles)
+components/studio/      Toolbar, canvas viewport, frame view, layers/assets panel, inspector, export dialog
+components/ui/          shadcn/ui primitives
+lib/gpu/engine.ts       vgpu engine: device, asset textures, per-frame surfaces/effects, render loop, offscreen renders
+lib/gpu/media.ts        Image/video decoding and the media registry
+lib/gpu/export.ts       Image encoding and MediaRecorder-based video capture
+lib/shaders/            WGSL sources and the shader registry (parameter schema)
+lib/store.ts            Zustand store: assets, frames, selection, viewport, tools
+```
+
+## Notes
+
+- Preview canvases are capped at 4096 px on their longest side regardless of zoom; exports use the source resolution times the chosen scale, up to the device's `maxTextureDimension2D`.
+- Video export records in real time at the display refresh cadence, throttled to the chosen frame rate. Heavy shaders at large sizes may drop below the target rate on slow GPUs; lower the scale in that case.
+- `next build` does not validate WGSL; use `npx vgpu check` (see above) before shipping shader changes.

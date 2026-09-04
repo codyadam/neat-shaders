@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { CanvasViewport } from "@/components/studio/canvas-viewport";
 import { EngineProvider, useEngine } from "@/components/studio/engine-context";
 import { ExportDialog } from "@/components/studio/export-dialog";
@@ -143,10 +144,16 @@ function GpuGate({ status, error }: { status: "booting" | "unsupported" | "error
             ? "This studio renders with WebGPU. Use a recent Chrome, Edge, or Safari 26+, or enable WebGPU in Firefox (about:config → dom.webgpu.enabled)."
             : error}
         </p>
-        <p className="mt-3 text-xs text-muted-foreground">
-          On Linux Chrome you may need <code className="font-mono">chrome://flags/#enable-unsafe-webgpu</code>
-          .
-        </p>
+        {status === "unsupported" ? (
+          <p className="mt-3 text-xs text-muted-foreground">
+            On Linux Chrome you may need{" "}
+            <code className="font-mono">chrome://flags/#enable-unsafe-webgpu</code>.
+          </p>
+        ) : (
+          <Button className="mt-4" size="sm" onClick={() => window.location.reload()}>
+            Reload
+          </Button>
+        )}
       </div>
     </div>
   );

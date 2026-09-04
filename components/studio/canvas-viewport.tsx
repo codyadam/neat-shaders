@@ -361,7 +361,7 @@ function SelectionChrome({
 function EmptyHint() {
   return (
     <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-      <div className="max-w-sm rounded-2xl border border-dashed bg-background/70 p-8 text-center backdrop-blur">
+      <div className="max-w-sm rounded-2xl border border-dashed bg-background/90 p-8 text-center">
         <p className="text-sm font-medium">Drop an image or video here</p>
         <p className="mt-1 text-xs text-muted-foreground">
           Each file becomes a frame with a shader applied. Use the Import button, or press{" "}

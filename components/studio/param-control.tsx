@@ -60,7 +60,11 @@ export function NumberField({
   suffix?: string;
 }) {
   const decimals = decimalsFor(step ?? 1);
-  const format = (v: number) => (Number.isFinite(v) ? v.toFixed(decimals).replace(/\.?0+$/, "") : "");
+  const format = (v: number) => {
+    if (!Number.isFinite(v)) return "";
+    const fixed = v.toFixed(decimals);
+    return fixed.includes(".") ? fixed.replace(/0+$/, "").replace(/\.$/, "") : fixed;
+  };
   const [text, setText] = React.useState(format(value));
   const [focused, setFocused] = React.useState(false);
   const [syncedValue, setSyncedValue] = React.useState(value);
