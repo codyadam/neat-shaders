@@ -77,6 +77,7 @@ function EmptyInspector() {
             ["Zoom", "⌘ + wheel · pinch"],
             ["Select / Hand", "V · H"],
             ["Import", "⌘ I"],
+            ["Paste image", "⌘ V"],
             ["Export", "⌘ E"],
             ["Duplicate", "⌘ D"],
             ["Delete", "⌫"],

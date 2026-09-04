@@ -9,7 +9,7 @@ import { ExportDialog } from "@/components/studio/export-dialog";
 import { Inspector } from "@/components/studio/inspector";
 import { LeftPanel } from "@/components/studio/left-panel";
 import { Toolbar } from "@/components/studio/toolbar";
-import { useImportFiles } from "@/components/studio/use-import";
+import { filesFromClipboard, useImportFiles } from "@/components/studio/use-import";
 import { usePersistence } from "@/components/studio/use-persistence";
 import { useStudio } from "@/lib/store";
 
@@ -29,9 +29,22 @@ function isTypingTarget(target: EventTarget | null): boolean {
 
 function StudioShell() {
   const { status, error } = useEngine();
-  const { openPicker } = useImportFiles();
+  const { openPicker, importFiles } = useImportFiles();
   const { restoring } = usePersistence();
   const uiHidden = useStudio((s) => s.uiHidden);
+
+  React.useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (isTypingTarget(e.target)) return;
+      if (useStudio.getState().exportOpen) return;
+      const files = filesFromClipboard(e.clipboardData);
+      if (files.length === 0) return;
+      e.preventDefault();
+      void importFiles(files);
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [importFiles]);
 
   React.useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {

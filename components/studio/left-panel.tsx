@@ -58,7 +58,9 @@ function LayersTab() {
 
   if (frames.length === 0) {
     return (
-      <div className="p-4 text-xs text-muted-foreground">No frames yet. Import media to create one.</div>
+      <div className="p-4 text-xs text-muted-foreground">
+        No frames yet. Drop, paste, or import media to create one.
+      </div>
     );
   }
   return (
@@ -213,7 +215,7 @@ function AssetsTab() {
       </div>
       {assets.length === 0 ? (
         <div className="p-4 text-xs text-muted-foreground">
-          Imported images and videos appear here. Drag one onto the canvas to create another frame from it.
+          Imported images and videos appear here. Paste, or drag one onto the canvas to create another frame.
         </div>
       ) : (
         <ScrollArea className="min-h-0 flex-1">

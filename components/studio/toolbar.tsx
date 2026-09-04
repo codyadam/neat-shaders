@@ -130,7 +130,7 @@ export function Toolbar() {
 
       <Separator orientation="vertical" className="mx-1 h-6!" />
 
-      <Hint label="Import images or videos" shortcut="⌘I">
+      <Hint label="Import images or videos (or paste)" shortcut="⌘I">
         <Button
           variant="outline"
           size="sm"

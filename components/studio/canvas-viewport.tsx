@@ -364,9 +364,11 @@ function EmptyHint() {
   return (
     <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
       <div className="max-w-sm rounded-2xl border border-dashed bg-background/90 p-8 text-center">
-        <p className="text-sm font-medium">Drop an image or video here</p>
+        <p className="text-sm font-medium">Drop or paste an image or video</p>
         <p className="mt-1 text-xs text-muted-foreground">
-          Each file becomes a frame with a shader applied. Use the Import button, or press{" "}
+          Each file becomes a frame with a shader applied. Paste a screenshot, use the Import button, or press{" "}
+          <kbd className="rounded border px-1 font-mono text-[10px]">⌘ V</kbd>
+          {" / "}
           <kbd className="rounded border px-1 font-mono text-[10px]">⌘ I</kbd>.
         </p>
       </div>
