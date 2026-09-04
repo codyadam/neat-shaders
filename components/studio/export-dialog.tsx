@@ -34,6 +34,7 @@ import {
 import { getShader } from "@/lib/shaders/registry";
 import { selectSelectedFrame, useStudio } from "@/lib/store";
 import type { Asset, Frame } from "@/lib/types";
+import { truncateName } from "@/lib/utils";
 
 const SCALE_PRESETS = [0.25, 0.5, 1, 2];
 
@@ -157,7 +158,9 @@ function ExportForm({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Export “{frame.name}”</DialogTitle>
+        <DialogTitle className="truncate" title={frame.name}>
+          Export “{truncateName(frame.name)}”
+        </DialogTitle>
         <DialogDescription>
           {getShader(frame.shaderId).name} · source {asset.width}×{asset.height}
           {isVideo && asset.duration ? ` · ${formatDuration(asset.duration)}` : ""}

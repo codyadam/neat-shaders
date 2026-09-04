@@ -18,6 +18,7 @@ import { getVideo } from "@/lib/gpu/media";
 import { SHADERS, getShader } from "@/lib/shaders/registry";
 import { selectSelectedFrame, useStudio } from "@/lib/store";
 import type { Asset, Frame } from "@/lib/types";
+import { truncateName } from "@/lib/utils";
 
 function Section({
   title,
@@ -294,7 +295,7 @@ function MediaSection({ frame, asset }: { frame: Frame; asset: Asset }) {
         />
         <div className="min-w-0 flex-1 text-[11px] leading-relaxed">
           <div className="truncate font-medium" title={asset.name}>
-            {asset.name}
+            {truncateName(asset.name)}
           </div>
           <div className="text-muted-foreground">
             {asset.width} × {asset.height} · {formatBytes(asset.fileSize)}
@@ -306,13 +307,13 @@ function MediaSection({ frame, asset }: { frame: Frame; asset: Asset }) {
       </div>
       {assets.length > 1 && (
         <Select value={frame.assetId} onValueChange={(v) => updateFrame(frame.id, { assetId: v })}>
-          <SelectTrigger className="h-8 w-full text-xs">
+          <SelectTrigger className="h-8 w-full text-xs [&>span]:truncate">
             <SelectValue placeholder="Replace media" />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent className="max-w-64">
             {assets.map((a) => (
-              <SelectItem key={a.id} value={a.id} className="text-xs">
-                {a.name}
+              <SelectItem key={a.id} value={a.id} className="text-xs" title={a.name}>
+                <span className="truncate">{truncateName(a.name)}</span>
               </SelectItem>
             ))}
           </SelectContent>
