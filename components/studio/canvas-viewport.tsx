@@ -6,7 +6,7 @@ import { useImportFiles } from "@/components/studio/use-import";
 import { getShader } from "@/lib/shaders/registry";
 import { useStudio } from "@/lib/store";
 import type { Frame } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { cn, truncateName } from "@/lib/utils";
 
 type Corner = "nw" | "ne" | "sw" | "se";
 
@@ -282,14 +282,15 @@ export function CanvasViewport() {
             <div
               key={f.id}
               className={cn(
-                "absolute flex max-w-full items-center gap-1.5 truncate text-[11px] leading-none",
+                "absolute flex max-w-full items-center gap-1.5 overflow-hidden text-[11px] leading-none whitespace-nowrap",
                 isSelected ? "text-(--selection)" : "text-muted-foreground",
               )}
               style={{ left: s.x, top: s.y - 18, width: Math.max(s.w, 120) }}
+              title={f.name}
             >
-              <span className="truncate font-medium">{f.name}</span>
-              <span className="opacity-70">· {getShader(f.shaderId).name}</span>
-              {asset?.kind === "video" && <span className="opacity-70">· video</span>}
+              <span className="min-w-0 truncate font-medium">{truncateName(f.name)}</span>
+              <span className="shrink-0 opacity-70">· {getShader(f.shaderId).name}</span>
+              {asset?.kind === "video" && <span className="shrink-0 opacity-70">· video</span>}
             </div>
           );
         })}

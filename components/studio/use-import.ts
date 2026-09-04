@@ -4,6 +4,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { loadAsset, kindForFile } from "@/lib/gpu/media";
 import { useStudio, viewportCenterWorld } from "@/lib/store";
+import { truncateName } from "@/lib/utils";
 
 export const ACCEPTED_TYPES = "image/*,video/*";
 
@@ -47,7 +48,7 @@ export function useImportFiles() {
             offset += 48;
           }
         } catch (err) {
-          toast.error(`Could not import ${file.name}`, {
+          toast.error(`Could not import ${truncateName(file.name)}`, {
             description: err instanceof Error ? err.message : undefined,
           });
         }

@@ -27,7 +27,7 @@ import { releaseMedia } from "@/lib/gpu/media";
 import { getShader } from "@/lib/shaders/registry";
 import { useStudio, viewportCenterWorld } from "@/lib/store";
 import type { Asset, Frame } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { cn, truncateName } from "@/lib/utils";
 
 export function LeftPanel() {
   return (
@@ -120,9 +120,9 @@ function LayerRow({ frame }: { frame: Frame }) {
           className="h-6 min-w-0 flex-1 rounded border bg-background px-1 outline-none"
         />
       ) : (
-        <span className="min-w-0 flex-1 truncate">
-          {frame.name}
-          <span className="ml-1 text-muted-foreground">· {getShader(frame.shaderId).name}</span>
+        <span className="flex min-w-0 flex-1 items-baseline gap-1" title={frame.name}>
+          <span className="min-w-0 truncate">{truncateName(frame.name)}</span>
+          <span className="shrink-0 truncate text-muted-foreground">· {getShader(frame.shaderId).name}</span>
         </span>
       )}
 
@@ -253,7 +253,7 @@ function AssetCard({ asset }: { asset: Asset }) {
         style={{ backgroundImage: `url(${asset.thumbnail})` }}
       />
       <div className="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/70 to-transparent p-1.5 text-[10px] text-white">
-        <div className="truncate font-medium">{asset.name}</div>
+        <div className="truncate font-medium">{truncateName(asset.name)}</div>
         <div className="flex items-center gap-1 opacity-80">
           {asset.kind === "video" ? <Film className="size-2.5" /> : <ImageIcon className="size-2.5" />}
           {asset.width}×{asset.height}
@@ -276,7 +276,7 @@ function AssetCard({ asset }: { asset: Asset }) {
           aria-label="Remove asset"
           className="shadow"
           onClick={() => {
-            if (usage > 0 && !confirm(`Remove "${asset.name}" and its ${usage} frame(s)?`)) return;
+            if (usage > 0 && !confirm(`Remove "${truncateName(asset.name)}" and its ${usage} frame(s)?`)) return;
             removeAsset(asset.id);
             releaseMedia(asset.id);
             URL.revokeObjectURL(asset.url);
