@@ -36,7 +36,9 @@ export function filesFromClipboard(data: DataTransfer | null): File[] {
       file.type || !fallbackType
         ? file
         : new File([file], file.name, { type: fallbackType, lastModified: file.lastModified });
-    const key = `${typed.name}\0${typed.size}\0${typed.type}\0${typed.lastModified}`;
+    // `files` and `items` describe the same clipboard entries, but browsers mint a fresh File (with
+    // `lastModified` = now) on every access, so the timestamp cannot be part of the identity.
+    const key = `${typed.name}\0${typed.size}\0${typed.type}`;
     if (seen.has(key)) return;
     seen.add(key);
     raw.push(typed);

@@ -27,24 +27,75 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
 }
 
+function isPasteShortcut(e: KeyboardEvent): boolean {
+  return (e.metaKey || e.ctrlKey) && (e.key.toLowerCase() === "v" || e.code === "KeyV");
+}
+
+/**
+ * Imports clipboard media on paste, once per physical key press.
+ *
+ * Holding ⌘/Ctrl+V makes the OS auto-repeat the shortcut and browsers dispatch a `paste` event for
+ * every repeat, which used to import the same image over and over. The repeated keydowns are
+ * cancelled (which suppresses their paste), and as a fallback any paste that still arrives while the
+ * shortcut is held after a handled one is ignored. Pastes that do not come from the keyboard
+ * (Edit menu, context menu) are unaffected.
+ */
+function usePasteImport(importFiles: (files: File[]) => Promise<unknown>) {
+  React.useEffect(() => {
+    let shortcutHeld = false;
+    let consumed = false;
+    const release = () => {
+      shortcutHeld = false;
+      consumed = false;
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!isPasteShortcut(e)) return;
+      if (e.repeat) {
+        if (!isTypingTarget(e.target)) e.preventDefault();
+        return;
+      }
+      shortcutHeld = true;
+      consumed = false;
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      // macOS can swallow the letter's keyup while ⌘ is down, so the modifier's keyup releases too.
+      if (e.key.toLowerCase() === "v" || e.code === "KeyV" || e.key === "Meta" || e.key === "Control") release();
+    };
+    const onPaste = (e: ClipboardEvent) => {
+      if (isTypingTarget(e.target)) return;
+      if (useStudio.getState().exportOpen) return;
+      if (shortcutHeld && consumed) {
+        e.preventDefault();
+        return;
+      }
+      const files = filesFromClipboard(e.clipboardData);
+      if (files.length === 0) return;
+      e.preventDefault();
+      if (shortcutHeld) consumed = true;
+      void importFiles(files);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", release);
+    window.addEventListener("paste", onPaste);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", release);
+      window.removeEventListener("paste", onPaste);
+    };
+  }, [importFiles]);
+}
+
 function StudioShell() {
   const { status, error } = useEngine();
   const { openPicker, importFiles } = useImportFiles();
   const { restoring } = usePersistence();
   const uiHidden = useStudio((s) => s.uiHidden);
 
-  React.useEffect(() => {
-    const onPaste = (e: ClipboardEvent) => {
-      if (isTypingTarget(e.target)) return;
-      if (useStudio.getState().exportOpen) return;
-      const files = filesFromClipboard(e.clipboardData);
-      if (files.length === 0) return;
-      e.preventDefault();
-      void importFiles(files);
-    };
-    window.addEventListener("paste", onPaste);
-    return () => window.removeEventListener("paste", onPaste);
-  }, [importFiles]);
+  usePasteImport(importFiles);
 
   React.useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {

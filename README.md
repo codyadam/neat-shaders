@@ -85,6 +85,6 @@ lib/persistence.ts      IndexedDB persistence: stored files + workspace snapshot
 
 ## Notes
 
-- Preview canvases are capped at 4096 px on their longest side regardless of zoom; exports use the source resolution times the chosen scale, up to the device's `maxTextureDimension2D`.
+- Preview canvases only cover the part of a frame that is inside the viewport, so zooming in never costs more than the screen's own pixels: the engine appends a vertex stage that remaps `uv` to the visible window and renders just that region at native resolution (still capped at 4096 px). Frames whose shader does not read `params.time` are redrawn only when their inputs, size or window change. Exports use the source resolution times the chosen scale, up to the device's `maxTextureDimension2D`.
 - Video export records in real time at the display refresh cadence, throttled to the chosen frame rate. Heavy shaders at large sizes may drop below the target rate on slow GPUs; lower the scale in that case.
 - `next build` does not validate WGSL; use `npx vgpu check` (see above) before shipping shader changes.
