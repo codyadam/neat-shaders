@@ -4,32 +4,52 @@ import * as React from "react";
 import { useEngine } from "@/components/studio/engine-context";
 import type { Frame } from "@/lib/types";
 
+export interface ScreenRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 interface FrameViewProps {
   frame: Frame;
-  screen: { x: number; y: number; w: number; h: number };
+  /** Where the whole frame sits in viewport space. */
+  screen: ScreenRect;
+  /** Part of `screen` that is inside the viewport; null when the frame is fully off-screen. */
+  clip: ScreenRect | null;
   onPointerDown: (e: React.PointerEvent, frame: Frame) => void;
   interactive: boolean;
 }
 
-/** One media+shader frame on the canvas: a WebGPU canvas positioned in screen space. */
+/**
+ * One media+shader frame on the canvas.
+ *
+ * The outer element spans the whole frame (it is the hit target and carries the shadow and
+ * checkerboard), but the WebGPU canvas inside it only covers the visible part. Zoomed in, that keeps
+ * the backing store at viewport size instead of the frame's size, and the engine renders just that
+ * window of the frame at native screen resolution.
+ */
 export const FrameView = React.memo(function FrameView({
   frame,
   screen,
+  clip,
   onPointerDown,
   interactive,
 }: FrameViewProps) {
   const { engine } = useEngine();
+  const hostRef = React.useRef<HTMLDivElement>(null);
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
 
   React.useEffect(() => {
     const canvas = canvasRef.current;
     if (!engine || !canvas) return;
-    engine.attachCanvas(frame.id, canvas);
+    engine.attachCanvas(frame.id, canvas, hostRef.current ?? undefined);
     return () => engine.detachCanvas(frame.id, canvas);
   }, [engine, frame.id]);
 
   return (
     <div
+      ref={hostRef}
       data-frame-id={frame.id}
       className="absolute"
       style={{
@@ -47,8 +67,12 @@ export const FrameView = React.memo(function FrameView({
     >
       <canvas
         ref={canvasRef}
-        className="block h-full w-full select-none"
-        style={{ imageRendering: "auto" }}
+        className="absolute select-none"
+        style={
+          clip
+            ? { left: clip.x - screen.x, top: clip.y - screen.y, width: clip.w, height: clip.h }
+            : { display: "none" }
+        }
         draggable={false}
       />
     </div>

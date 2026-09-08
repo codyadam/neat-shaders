@@ -855,6 +855,13 @@ export function getShader(id: string): ShaderDefinition {
   return SHADERS.find((s) => s.id === id) ?? SHADERS[0];
 }
 
+const TIME_REFERENCE = /\bparams\.time\b/;
+
+/** True when the shader reads `params.time`, so its output changes even while its inputs do not. */
+export function isAnimated(def: ShaderDefinition): boolean {
+  return TIME_REFERENCE.test(def.source.wgsl);
+}
+
 export function defaultParams(def: ShaderDefinition): Record<string, ParamValue> {
   const out: Record<string, ParamValue> = {};
   for (const p of def.params) {

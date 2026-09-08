@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { FrameView } from "@/components/studio/frame-view";
+import { FrameView, type ScreenRect } from "@/components/studio/frame-view";
 import { useImportFiles } from "@/components/studio/use-import";
 import { getShader } from "@/lib/shaders/registry";
 import { useStudio } from "@/lib/store";
@@ -45,6 +45,7 @@ export function CanvasViewport() {
   const assets = useStudio((s) => s.assets);
   const selectedId = useStudio((s) => s.selectedId);
   const viewport = useStudio((s) => s.viewport);
+  const viewSize = useStudio((s) => s.viewSize);
   const tool = useStudio((s) => s.tool);
   const spaceHeld = useStudio((s) => s.spaceHeld);
   const uiHidden = useStudio((s) => s.uiHidden);
@@ -233,7 +234,7 @@ export function CanvasViewport() {
   };
 
   const selected = frames.find((f) => f.id === selectedId) ?? null;
-  const toScreen = (f: Frame) => ({
+  const toScreen = (f: Frame): ScreenRect => ({
     x: f.x * viewport.zoom + viewport.x,
     y: f.y * viewport.zoom + viewport.y,
     w: f.width * viewport.zoom,
@@ -262,15 +263,19 @@ export function CanvasViewport() {
       onDrop={onDrop}
       onContextMenu={(e) => e.preventDefault()}
     >
-      {frames.map((f) => (
-        <FrameView
-          key={f.id}
-          frame={f}
-          screen={toScreen(f)}
-          onPointerDown={onFramePointerDown}
-          interactive={!panMode}
-        />
-      ))}
+      {frames.map((f) => {
+        const screen = toScreen(f);
+        return (
+          <FrameView
+            key={f.id}
+            frame={f}
+            screen={screen}
+            clip={clipToView(screen, viewSize)}
+            onPointerDown={onFramePointerDown}
+            interactive={!panMode}
+          />
+        );
+      })}
 
       {/* Overlay: labels and selection chrome in screen space. Dropped while the UI is hidden. */}
       <div className="pointer-events-none absolute inset-0" hidden={uiHidden}>
@@ -374,6 +379,16 @@ function EmptyHint() {
       </div>
     </div>
   );
+}
+
+/** Intersection of a frame's screen rect with the viewport, or null when nothing of it is visible. */
+function clipToView(screen: ScreenRect, view: { w: number; h: number }): ScreenRect | null {
+  const x0 = Math.max(0, screen.x);
+  const y0 = Math.max(0, screen.y);
+  const x1 = Math.min(view.w, screen.x + screen.w);
+  const y1 = Math.min(view.h, screen.y + screen.h);
+  if (x1 - x0 < 1 || y1 - y0 < 1) return null;
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
 /** Grid spacing that stays between 24 and 96 screen pixels across zoom levels. */

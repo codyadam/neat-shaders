@@ -16,7 +16,7 @@ import {
 } from "vgpu";
 import type { Texture } from "vgpu/core";
 import type { Asset, Frame } from "@/lib/types";
-import { getShader, toUniformValues, type ParamValue } from "@/lib/shaders/registry";
+import { getShader, isAnimated, toUniformValues, type ParamValue } from "@/lib/shaders/registry";
 import { getMedia, type MediaSource } from "@/lib/gpu/media";
 
 interface AssetRuntime {
@@ -24,7 +24,12 @@ interface AssetRuntime {
   texture: Texture;
   media: MediaSource;
   lastVideoTime: number;
+  /** Bumped whenever new pixels land in `texture`, so dependent frames know to redraw. */
+  version: number;
 }
+
+/** Sub-rectangle of the frame's uv space a preview canvas shows: `[u, v, width, height]`. */
+type UvWindow = readonly [number, number, number, number];
 
 interface FrameRuntime {
   frameId: string;
@@ -32,9 +37,19 @@ interface FrameRuntime {
   shaderId: string;
   params: Record<string, ParamValue>;
   effect: Effect;
+  /** The shader reads `params.time`, so it must be redrawn every tick. */
+  animated: boolean;
   canvas?: HTMLCanvasElement;
+  /** Element covering the whole frame on screen; the canvas only covers its visible part. */
+  host?: HTMLElement;
   surface?: Surface;
   visible: boolean;
+  /** Something the last presented image depends on changed. */
+  dirty: boolean;
+  /** Window currently uploaded to the effect's `studio_window` uniform. */
+  window: UvWindow | null;
+  /** `AssetRuntime.version` the last presented image was drawn from. */
+  assetVersion: number;
 }
 
 export interface EngineSnapshot {
@@ -44,8 +59,42 @@ export interface EngineSnapshot {
 
 export type EngineErrorListener = (error: Error) => void;
 
-/** Largest backing-store dimension for a preview canvas, regardless of zoom. */
+/** Largest backing-store dimension for a preview canvas; the visible window rarely gets near it. */
 const MAX_PREVIEW_DIM = 4096;
+
+const FULL_WINDOW: UvWindow = [0, 0, 1, 1];
+
+/**
+ * Vertex stage shared by every preview effect. It draws vgpu's fullscreen triangle but remaps the
+ * interpolated uv through `studio_window`, so a canvas that only covers the visible part of a frame
+ * renders exactly that part at its own resolution instead of the whole frame. Shaders stay
+ * fragment-only and unaware of it; exports set the window back to the full frame.
+ */
+const PREVIEW_VERTEX_STAGE = /* wgsl */ `
+struct StudioWindow {
+  origin: vec2f,
+  size: vec2f,
+}
+@group(1) @binding(0) var<uniform> studio_window: StudioWindow;
+
+struct StudioVertexOut {
+  @builtin(position) position: vec4f,
+  @location(0) uv: vec2f,
+}
+
+@vertex fn studio_vs(@builtin(vertex_index) vi: u32) -> StudioVertexOut {
+  var pos = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0));
+  var uv = array<vec2f, 3>(vec2f(0.0, 1.0), vec2f(2.0, 1.0), vec2f(0.0, -1.0));
+  var out: StudioVertexOut;
+  out.position = vec4f(pos[vi], 0.0, 1.0);
+  out.uv = studio_window.origin + uv[vi] * studio_window.size;
+  return out;
+}
+`;
+
+function sameWindow(a: UvWindow | null, b: UvWindow): boolean {
+  return a !== null && a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3];
+}
 
 export class StudioEngine {
   readonly gpu: Gpu;
@@ -77,9 +126,20 @@ export class StudioEngine {
       const t = time.time;
       for (const rt of this.frames.values()) {
         if (!rt.visible || !rt.surface || !rt.canvas) continue;
-        if (!this.fitSurfaceToCanvas(rt)) continue;
+        const view = this.fitSurfaceToCanvas(rt);
+        if (!view) continue;
+        this.applyWindow(rt, view);
+        const asset = this.assets.get(rt.assetId);
+        if (asset && asset.version !== rt.assetVersion) {
+          rt.assetVersion = asset.version;
+          rt.dirty = true;
+        }
+        // A canvas keeps showing its last presented image, so static frames are only drawn again
+        // when something they depend on changed.
+        if (!rt.dirty && !rt.animated) continue;
         rt.effect.set({ params: { time: t } });
         f.pass(rt.surface, rt.effect);
+        rt.dirty = false;
       }
     });
   }
@@ -124,9 +184,12 @@ export class StudioEngine {
       }
       if (rt.shaderId !== f.shaderId) {
         rt.effect = this.createEffect(f);
+        rt.animated = isAnimated(getShader(f.shaderId));
         rt.shaderId = f.shaderId;
         rt.assetId = f.assetId;
         rt.params = f.params;
+        rt.window = null;
+        rt.dirty = true;
       } else {
         if (rt.assetId !== f.assetId) {
           const asset = this.assets.get(f.assetId);
@@ -136,14 +199,20 @@ export class StudioEngine {
               params: { resolution: [asset.media.width, asset.media.height] },
             });
             rt.assetId = f.assetId;
+            rt.assetVersion = asset.version;
+            rt.dirty = true;
           }
         }
         if (rt.params !== f.params) {
           rt.effect.set({ params: toUniformValues(getShader(f.shaderId), f.params) });
           rt.params = f.params;
+          rt.dirty = true;
         }
       }
-      rt.visible = f.visible;
+      if (rt.visible !== f.visible) {
+        rt.visible = f.visible;
+        rt.dirty = true;
+      }
     }
     for (const [id, rt] of this.frames) {
       if (!liveFrames.has(id)) {
@@ -153,18 +222,26 @@ export class StudioEngine {
     }
   }
 
-  /** Binds a DOM canvas to a frame so the render loop presents into it. */
-  attachCanvas(frameId: string, canvas: HTMLCanvasElement): void {
+  /**
+   * Binds a DOM canvas to a frame so the render loop presents into it.
+   *
+   * `host` is the element that spans the whole frame on screen. When given, the canvas is expected
+   * to sit inside it covering only the part currently in view, and the loop renders just that
+   * window of the frame; without a host the canvas shows the full frame.
+   */
+  attachCanvas(frameId: string, canvas: HTMLCanvasElement, host?: HTMLElement): void {
     const rt = this.frames.get(frameId);
     if (!rt || this.disposed) return;
     if (rt.surface) rt.surface.dispose();
     rt.canvas = canvas;
+    rt.host = host;
     rt.surface = surface(this.gpu, canvas, {
       size: [Math.max(1, canvas.width), Math.max(1, canvas.height)],
       dpr: [1, 2],
       alphaMode: "premultiplied",
       label: `frame:${frameId}`,
     });
+    rt.dirty = true;
   }
 
   detachCanvas(frameId: string, canvas: HTMLCanvasElement): void {
@@ -173,6 +250,7 @@ export class StudioEngine {
     rt.surface?.dispose();
     rt.surface = undefined;
     rt.canvas = undefined;
+    rt.host = undefined;
   }
 
   /** Renders a frame's effect at an arbitrary resolution and returns tightly packed RGBA8 bytes. */
@@ -180,6 +258,7 @@ export class StudioEngine {
     const rt = this.frames.get(frameId);
     if (!rt) throw new Error("Frame is not ready on the GPU yet.");
     this.uploadVideoFrames();
+    this.applyWindow(rt, FULL_WINDOW);
     const offscreen = target(this.gpu, {
       size: [Math.max(1, Math.floor(width)), Math.max(1, Math.floor(height))],
       format: "rgba8unorm",
@@ -210,6 +289,7 @@ export class StudioEngine {
     const rt = this.frames.get(frameId);
     if (!rt) return;
     this.uploadVideoFrames();
+    this.applyWindow(rt, FULL_WINDOW);
     frame(this.gpu, (f) => f.pass(exportSurface, rt.effect));
   }
 
@@ -236,13 +316,14 @@ export class StudioEngine {
       usage: ["texture_binding", "copy_dst", "render_attachment"],
       label: `asset:${asset.name}`,
     });
-    const rt: AssetRuntime = { assetId: asset.id, texture, media, lastVideoTime: -1 };
+    const rt: AssetRuntime = { assetId: asset.id, texture, media, lastVideoTime: -1, version: 0 };
     this.assets.set(asset.id, rt);
     if (media.kind === "image") {
       this.gpu.gpu.queue.copyExternalImageToTexture({ source: media.bitmap }, { texture: texture.gpu }, [
         media.width,
         media.height,
       ]);
+      rt.version += 1;
     } else {
       this.uploadVideo(rt, true);
     }
@@ -257,7 +338,11 @@ export class StudioEngine {
       shaderId: f.shaderId,
       params: f.params,
       effect: this.createEffect(f),
+      animated: isAnimated(getShader(f.shaderId)),
       visible: f.visible,
+      dirty: true,
+      window: null,
+      assetVersion: asset.version,
     });
   }
 
@@ -265,7 +350,7 @@ export class StudioEngine {
     const asset = this.assets.get(f.assetId);
     if (!asset) throw new Error(`Missing asset ${f.assetId} for frame ${f.id}`);
     const shader = getShader(f.shaderId);
-    return effect(this.gpu, shader.source, {
+    return effect(this.gpu, shader.source.wgsl + PREVIEW_VERTEX_STAGE, {
       label: `${shader.id}:${f.id}`,
       set: {
         params: {
@@ -275,8 +360,16 @@ export class StudioEngine {
         },
         src: asset.texture,
         samp: this.linearSampler,
+        studio_window: { origin: [0, 0], size: [1, 1] },
       },
     });
+  }
+
+  private applyWindow(rt: FrameRuntime, view: UvWindow): void {
+    if (sameWindow(rt.window, view)) return;
+    rt.effect.set({ studio_window: { origin: [view[0], view[1]], size: [view[2], view[3]] } });
+    rt.window = view;
+    rt.dirty = true;
   }
 
   private uploadVideoFrames(): void {
@@ -297,17 +390,21 @@ export class StudioEngine {
         rt.media.height,
       ]);
       rt.lastVideoTime = video.currentTime;
+      rt.version += 1;
     } catch {
       // A frame can be transiently unavailable (seeking, decoder stall); try again next tick.
     }
   }
 
-  /** Keeps the swapchain matched to the on-screen canvas size, clamped to a sane maximum. */
-  private fitSurfaceToCanvas(rt: FrameRuntime): boolean {
+  /**
+   * Keeps the swapchain matched to the on-screen canvas size (clamped to a sane maximum) and
+   * returns the part of the frame the canvas covers, or null when it has no visible area.
+   */
+  private fitSurfaceToCanvas(rt: FrameRuntime): UvWindow | null {
     const canvas = rt.canvas!;
     const cssW = canvas.clientWidth;
     const cssH = canvas.clientHeight;
-    if (cssW < 1 || cssH < 1) return false;
+    if (cssW < 1 || cssH < 1) return null;
     const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
     let w = Math.round(cssW * dpr);
     let h = Math.round(cssH * dpr);
@@ -315,8 +412,21 @@ export class StudioEngine {
     w = Math.max(1, Math.floor(w * scale));
     h = Math.max(1, Math.floor(h * scale));
     const size = rt.surface!.size;
-    if (size[0] !== w || size[1] !== h) rt.surface!.resize([w, h]);
-    return true;
+    if (size[0] !== w || size[1] !== h) {
+      // Changing the backing store wipes the canvas, so it must be drawn again.
+      rt.surface!.resize([w, h]);
+      rt.dirty = true;
+    }
+    if (!rt.host) return FULL_WINDOW;
+    const hostRect = rt.host.getBoundingClientRect();
+    if (hostRect.width < 1 || hostRect.height < 1) return FULL_WINDOW;
+    const canvasRect = canvas.getBoundingClientRect();
+    return [
+      (canvasRect.left - hostRect.left) / hostRect.width,
+      (canvasRect.top - hostRect.top) / hostRect.height,
+      canvasRect.width / hostRect.width,
+      canvasRect.height / hostRect.height,
+    ];
   }
 }
 
