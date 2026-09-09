@@ -3,7 +3,7 @@
 import * as React from "react";
 import { FrameView, type ScreenRect } from "@/components/studio/frame-view";
 import { useImportFiles } from "@/components/studio/use-import";
-import { getShader } from "@/lib/shaders/registry";
+import { stackLabel } from "@/lib/shaders/layers";
 import { useStudio } from "@/lib/store";
 import type { Frame } from "@/lib/types";
 import { cn, truncateName } from "@/lib/utils";
@@ -48,8 +48,10 @@ export function CanvasViewport() {
   const viewSize = useStudio((s) => s.viewSize);
   const tool = useStudio((s) => s.tool);
   const spaceHeld = useStudio((s) => s.spaceHeld);
+  const shadersBypassed = useStudio((s) => s.shadersBypassed);
   const uiHidden = useStudio((s) => s.uiHidden);
   const panMode = tool === "hand" || spaceHeld;
+  const showingOriginal = shadersBypassed || spaceHeld;
 
   React.useEffect(() => {
     const el = ref.current;
@@ -295,7 +297,7 @@ export function CanvasViewport() {
               title={f.name}
             >
               <span className="min-w-0 truncate font-medium">{truncateName(f.name)}</span>
-              <span className="shrink-0 opacity-70">· {getShader(f.shaderId).name}</span>
+              <span className="shrink-0 opacity-70">· {stackLabel(f)}</span>
               {asset?.kind === "video" && <span className="shrink-0 opacity-70">· video</span>}
             </div>
           );
@@ -312,6 +314,13 @@ export function CanvasViewport() {
 
       {dropActive && (
         <div className="pointer-events-none absolute inset-2 rounded-xl border-2 border-dashed border-(--selection) bg-(--selection)/5" />
+      )}
+
+      {showingOriginal && frames.length > 0 && (
+        <div className="pointer-events-none absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-full border bg-background/85 px-3 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur">
+          Original · shaders hidden
+          <kbd className="ml-2 rounded bg-muted px-1 font-mono text-[10px]">Space</kbd>
+        </div>
       )}
 
       {frames.length === 0 && <EmptyHint />}

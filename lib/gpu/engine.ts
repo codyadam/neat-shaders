@@ -13,63 +13,73 @@ import {
   type FrameLoopHandle,
   type Gpu,
   type Surface,
+  type Target,
 } from "vgpu";
 import type { Texture } from "vgpu/core";
-import type { Asset, Frame } from "@/lib/types";
-import { getShader, isAnimated, toUniformValues, type ParamValue } from "@/lib/shaders/registry";
+import type { Asset, Frame, ShaderLayer } from "@/lib/types";
+import { renderCharsetAtlas } from "@/lib/shaders/ascii-atlas";
+import { needsMix, visibleLayers } from "@/lib/shaders/layers";
+import {
+  getPasses,
+  getShader,
+  isAnimated,
+  toUniformValues,
+  type ParamValue,
+  type ShaderDefinition,
+  type ShaderPass,
+} from "@/lib/shaders/registry";
 import { getMedia, type MediaSource } from "@/lib/gpu/media";
+import blitSource from "@/lib/shaders/wgsl/blit.wgsl";
+import mixSource from "@/lib/shaders/wgsl/mix.wgsl";
 
 interface AssetRuntime {
   assetId: string;
   texture: Texture;
   media: MediaSource;
   lastVideoTime: number;
-  /** Bumped whenever new pixels land in `texture`, so dependent frames know to redraw. */
   version: number;
 }
 
-/** Sub-rectangle of the frame's uv space a preview canvas shows: `[u, v, width, height]`. */
 type UvWindow = readonly [number, number, number, number];
+
+interface AtlasRuntime {
+  key: string;
+  texture: Texture;
+  cols: number;
+  count: number;
+  width: number;
+  height: number;
+}
 
 interface FrameRuntime {
   frameId: string;
   assetId: string;
-  shaderId: string;
-  params: Record<string, ParamValue>;
-  effect: Effect;
-  /** The shader reads `params.time`, so it must be redrawn every tick. */
-  animated: boolean;
+  shaderKey: string;
+  layerFx: Map<string, Effect[]>;
+  pingA?: Target;
+  pingB?: Target;
+  pingSize: [number, number];
   canvas?: HTMLCanvasElement;
-  /** Element covering the whole frame on screen; the canvas only covers its visible part. */
   host?: HTMLElement;
   surface?: Surface;
   visible: boolean;
-  /** Something the last presented image depends on changed. */
   dirty: boolean;
-  /** Window currently uploaded to the effect's `studio_window` uniform. */
+  animated: boolean;
   window: UvWindow | null;
-  /** `AssetRuntime.version` the last presented image was drawn from. */
   assetVersion: number;
 }
 
 export interface EngineSnapshot {
   assets: Asset[];
   frames: Frame[];
+  bypassShaders: boolean;
 }
 
 export type EngineErrorListener = (error: Error) => void;
 
-/** Largest backing-store dimension for a preview canvas; the visible window rarely gets near it. */
 const MAX_PREVIEW_DIM = 4096;
-
 const FULL_WINDOW: UvWindow = [0, 0, 1, 1];
 
-/**
- * Vertex stage shared by every preview effect. It draws vgpu's fullscreen triangle but remaps the
- * interpolated uv through `studio_window`, so a canvas that only covers the visible part of a frame
- * renders exactly that part at its own resolution instead of the whole frame. Shaders stay
- * fragment-only and unaware of it; exports set the window back to the full frame.
- */
 const PREVIEW_VERTEX_STAGE = /* wgsl */ `
 struct StudioWindow {
   origin: vec2f,
@@ -92,20 +102,49 @@ struct StudioVertexOut {
 }
 `;
 
-function sameWindow(a: UvWindow | null, b: UvWindow): boolean {
-  return a !== null && a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3];
+function shaderKeyOf(frame: Frame): string {
+  return frame.layers.map((l) => `${l.id}:${l.shaderId}`).join("|");
+}
+
+function frameAnimated(frame: Frame): boolean {
+  return frame.layers.some((l) => l.visible && isAnimated(getShader(l.shaderId)));
+}
+
+function wgslOf(pass: ShaderPass): string {
+  return pass.source.wgsl;
+}
+
+function hasBinding(wgsl: string, name: string): boolean {
+  return new RegExp(`\\bvar ${name}\\s*:`).test(wgsl);
+}
+
+function cappedSize(width: number, height: number, maxDim: number): [number, number] {
+  const scale = Math.min(1, maxDim / Math.max(width, height, 1));
+  return [Math.max(1, Math.floor(width * scale)), Math.max(1, Math.floor(height * scale))];
+}
+
+function destroyTarget(t?: Target): void {
+  (t as unknown as { destroy?: () => void } | undefined)?.destroy?.();
 }
 
 export class StudioEngine {
   readonly gpu: Gpu;
   private readonly assets = new Map<string, AssetRuntime>();
   private readonly frames = new Map<string, FrameRuntime>();
+  private readonly atlases = new Map<string, AtlasRuntime>();
   private readonly linearSampler: GPUSampler;
+  private readonly nearestSampler: GPUSampler;
+  private readonly white: Texture;
+  private mixEffect!: Effect;
+  private blitOffscreen!: Effect;
+  private blitPreview!: Effect;
   private loop: FrameLoopHandle | null = null;
   private readonly errorListeners = new Set<EngineErrorListener>();
   private readonly maxDim: number;
   private disposed = false;
   private previewPaused = false;
+  private bypassShaders = false;
+  private readonly time;
 
   private constructor(gpu: Gpu) {
     this.gpu = gpu;
@@ -115,30 +154,46 @@ export class StudioEngine {
       addressModeU: "clamp-to-edge",
       addressModeV: "clamp-to-edge",
     });
+    this.nearestSampler = sampler(gpu, {
+      minFilter: "nearest",
+      magFilter: "nearest",
+      addressModeU: "clamp-to-edge",
+      addressModeV: "clamp-to-edge",
+    });
     this.maxDim = Math.min(gpu.gpu.limits.maxTextureDimension2D, MAX_PREVIEW_DIM);
+    this.white = this.makeSolidTexture([255, 255, 255, 255]);
+    this.time = clock(gpu);
+    this.createSharedEffects();
+
     gpu.onError((error) => {
       for (const cb of this.errorListeners) cb(error);
     });
-    const time = clock(gpu);
     this.loop = frameLoop(gpu, (f) => {
       if (this.previewPaused) return;
       this.uploadVideoFrames();
-      const t = time.time;
+      const t = this.time.time;
       for (const rt of this.frames.values()) {
         if (!rt.visible || !rt.surface || !rt.canvas) continue;
         const view = this.fitSurfaceToCanvas(rt);
         if (!view) continue;
-        this.applyWindow(rt, view);
         const asset = this.assets.get(rt.assetId);
         if (asset && asset.version !== rt.assetVersion) {
           rt.assetVersion = asset.version;
           rt.dirty = true;
         }
-        // A canvas keeps showing its last presented image, so static frames are only drawn again
-        // when something they depend on changed.
-        if (!rt.dirty && !rt.animated) continue;
-        rt.effect.set({ params: { time: t } });
-        f.pass(rt.surface, rt.effect);
+        if (!rt.dirty && !rt.animated && !this.bypassShaders) continue;
+        const frameDoc = this.liveFrame(rt.frameId);
+        if (!frameDoc || !asset) continue;
+        const size = this.ensurePing(rt, asset);
+        const out = this.encodeStack(f, frameDoc, rt.pingA!, rt.pingB!, size, this.bypassShaders, t);
+        this.blitPreview.set({
+          src: out.color,
+          samp: this.linearSampler,
+          params: { resolution: size, time: t },
+          studio_window: { origin: [view[0], view[1]], size: [view[2], view[3]] },
+        });
+        f.pass(rt.surface, this.blitPreview);
+        rt.window = view;
         rt.dirty = false;
       }
     });
@@ -149,7 +204,6 @@ export class StudioEngine {
     return new StudioEngine(gpu);
   }
 
-  /** Skips on-canvas preview rendering, e.g. while a video export needs every frame it can get. */
   setPreviewPaused(paused: boolean): void {
     this.previewPaused = paused;
   }
@@ -159,9 +213,13 @@ export class StudioEngine {
     return () => this.errorListeners.delete(cb);
   }
 
-  /** Reconciles GPU resources with the current studio state. Cheap when nothing changed. */
   sync(snapshot: EngineSnapshot): void {
     if (this.disposed) return;
+    if (this.bypassShaders !== snapshot.bypassShaders) {
+      this.bypassShaders = snapshot.bypassShaders;
+      for (const rt of this.frames.values()) rt.dirty = true;
+    }
+
     const liveAssets = new Set<string>();
     for (const asset of snapshot.assets) {
       liveAssets.add(asset.id);
@@ -182,53 +240,43 @@ export class StudioEngine {
         this.createFrameRuntime(f);
         continue;
       }
-      if (rt.shaderId !== f.shaderId) {
-        rt.effect = this.createEffect(f);
-        rt.animated = isAnimated(getShader(f.shaderId));
-        rt.shaderId = f.shaderId;
-        rt.assetId = f.assetId;
-        rt.params = f.params;
-        rt.window = null;
+      const key = shaderKeyOf(f);
+      if (rt.shaderKey !== key) {
+        this.rebuildLayerEffects(rt, f);
+        rt.shaderKey = key;
         rt.dirty = true;
-      } else {
-        if (rt.assetId !== f.assetId) {
-          const asset = this.assets.get(f.assetId);
-          if (asset) {
-            rt.effect.set({
-              src: asset.texture,
-              params: { resolution: [asset.media.width, asset.media.height] },
-            });
-            rt.assetId = f.assetId;
-            rt.assetVersion = asset.version;
-            rt.dirty = true;
-          }
-        }
-        if (rt.params !== f.params) {
-          rt.effect.set({ params: toUniformValues(getShader(f.shaderId), f.params) });
-          rt.params = f.params;
-          rt.dirty = true;
-        }
+      }
+      if (rt.assetId !== f.assetId) {
+        rt.assetId = f.assetId;
+        rt.dirty = true;
+      }
+      const animated = frameAnimated(f);
+      if (rt.animated !== animated) {
+        rt.animated = animated;
+        rt.dirty = true;
       }
       if (rt.visible !== f.visible) {
         rt.visible = f.visible;
         rt.dirty = true;
       }
+      rt.dirty = true;
     }
     for (const [id, rt] of this.frames) {
       if (!liveFrames.has(id)) {
-        rt.surface?.dispose();
+        this.disposeFrameRuntime(rt);
         this.frames.delete(id);
       }
     }
+
+    this.liveFrames = snapshot.frames;
   }
 
-  /**
-   * Binds a DOM canvas to a frame so the render loop presents into it.
-   *
-   * `host` is the element that spans the whole frame on screen. When given, the canvas is expected
-   * to sit inside it covering only the part currently in view, and the loop renders just that
-   * window of the frame; without a host the canvas shows the full frame.
-   */
+  private liveFrames: Frame[] = [];
+
+  private liveFrame(id: string): Frame | undefined {
+    return this.liveFrames.find((f) => f.id === id);
+  }
+
   attachCanvas(frameId: string, canvas: HTMLCanvasElement, host?: HTMLElement): void {
     const rt = this.frames.get(frameId);
     if (!rt || this.disposed) return;
@@ -253,26 +301,25 @@ export class StudioEngine {
     rt.host = undefined;
   }
 
-  /** Renders a frame's effect at an arbitrary resolution and returns tightly packed RGBA8 bytes. */
   async renderToBytes(frameId: string, width: number, height: number): Promise<Uint8Array> {
-    const rt = this.frames.get(frameId);
-    if (!rt) throw new Error("Frame is not ready on the GPU yet.");
+    const size: [number, number] = [Math.max(1, Math.floor(width)), Math.max(1, Math.floor(height))];
     this.uploadVideoFrames();
-    this.applyWindow(rt, FULL_WINDOW);
-    const offscreen = target(this.gpu, {
-      size: [Math.max(1, Math.floor(width)), Math.max(1, Math.floor(height))],
-      format: "rgba8unorm",
-      label: "export",
-    });
+    const pingA = target(this.gpu, { size, format: "rgba8unorm", label: "export-a" });
+    const pingB = target(this.gpu, { size, format: "rgba8unorm", label: "export-b" });
     try {
-      frame(this.gpu, (f) => f.pass(offscreen, rt.effect));
-      return await offscreen.read();
+      const frameDoc = this.liveFrame(frameId);
+      if (!frameDoc) throw new Error("Frame is not ready on the GPU yet.");
+      let out: Target = pingA;
+      frame(this.gpu, (f) => {
+        out = this.encodeStack(f, frameDoc, pingA, pingB, size, false, this.time.time);
+      });
+      return await out.read();
     } finally {
-      (offscreen as unknown as { destroy?: () => void }).destroy?.();
+      destroyTarget(pingA);
+      destroyTarget(pingB);
     }
   }
 
-  /** Creates a surface on a detached canvas sized exactly to `[width, height]`, for video capture. */
   createExportSurface(canvas: HTMLCanvasElement, width: number, height: number): Surface {
     canvas.width = width;
     canvas.height = height;
@@ -284,27 +331,91 @@ export class StudioEngine {
     });
   }
 
-  /** Presents one frame of `frameId` into `exportSurface`; uploads the newest video frame first. */
   renderToSurface(frameId: string, exportSurface: Surface): void {
-    const rt = this.frames.get(frameId);
-    if (!rt) return;
+    const frameDoc = this.liveFrame(frameId);
+    if (!frameDoc) return;
     this.uploadVideoFrames();
-    this.applyWindow(rt, FULL_WINDOW);
-    frame(this.gpu, (f) => f.pass(exportSurface, rt.effect));
-  }
-
-  getEffect(frameId: string): Effect | undefined {
-    return this.frames.get(frameId)?.effect;
+    const size = exportSurface.size as [number, number];
+    const pingA = target(this.gpu, { size, format: "rgba8unorm", label: "export-va" });
+    const pingB = target(this.gpu, { size, format: "rgba8unorm", label: "export-vb" });
+    try {
+      frame(this.gpu, (f) => {
+        const out = this.encodeStack(f, frameDoc, pingA, pingB, size, false, this.time.time);
+        this.blitOffscreen.set({
+          src: out.color,
+          samp: this.linearSampler,
+          params: { resolution: size, time: this.time.time },
+        });
+        f.pass(exportSurface, this.blitOffscreen);
+      });
+    } finally {
+      destroyTarget(pingA);
+      destroyTarget(pingB);
+    }
   }
 
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
     this.loop?.stop();
-    for (const rt of this.frames.values()) rt.surface?.dispose();
+    for (const rt of this.frames.values()) this.disposeFrameRuntime(rt);
     this.frames.clear();
+    for (const rt of this.assets.values()) rt.texture.destroy();
     this.assets.clear();
+    for (const atlas of this.atlases.values()) atlas.texture.destroy();
+    this.atlases.clear();
+    this.white.destroy();
     this.gpu.dispose();
+  }
+
+  private createSharedEffects(): void {
+    const dummy = this.white;
+    this.mixEffect = effect(this.gpu, mixSource.wgsl, {
+      label: "mix",
+      set: {
+        params: {
+          resolution: [1, 1],
+          time: 0,
+          opacity: 1,
+          invert: 0,
+          feather: 0,
+          contrast: 1,
+          has_mask: 0,
+        },
+        src: dummy,
+        orig: dummy,
+        mask: dummy,
+        samp: this.linearSampler,
+      },
+    });
+    this.blitOffscreen = effect(this.gpu, blitSource.wgsl, {
+      label: "blit",
+      set: {
+        params: { resolution: [1, 1], time: 0 },
+        src: dummy,
+        samp: this.linearSampler,
+      },
+    });
+    this.blitPreview = effect(this.gpu, blitSource.wgsl + PREVIEW_VERTEX_STAGE, {
+      label: "blit-preview",
+      set: {
+        params: { resolution: [1, 1], time: 0 },
+        src: dummy,
+        samp: this.linearSampler,
+        studio_window: { origin: [0, 0], size: [1, 1] },
+      },
+    });
+  }
+
+  private makeSolidTexture(rgba: [number, number, number, number]): Texture {
+    const texture = this.gpu.device.createTexture({
+      size: [1, 1],
+      format: "rgba8unorm",
+      usage: ["texture_binding", "copy_dst", "render_attachment"],
+      label: "solid",
+    });
+    this.gpu.gpu.queue.writeTexture({ texture: texture.gpu }, new Uint8Array(rgba), { bytesPerRow: 4 }, [1, 1]);
+    return texture;
   }
 
   private createAssetRuntime(asset: Asset): void {
@@ -332,44 +443,239 @@ export class StudioEngine {
   private createFrameRuntime(f: Frame): void {
     const asset = this.assets.get(f.assetId);
     if (!asset) return;
-    this.frames.set(f.id, {
+    const rt: FrameRuntime = {
       frameId: f.id,
       assetId: f.assetId,
-      shaderId: f.shaderId,
-      params: f.params,
-      effect: this.createEffect(f),
-      animated: isAnimated(getShader(f.shaderId)),
+      shaderKey: shaderKeyOf(f),
+      layerFx: new Map(),
+      pingSize: [1, 1],
       visible: f.visible,
       dirty: true,
+      animated: frameAnimated(f),
       window: null,
       assetVersion: asset.version,
+    };
+    this.rebuildLayerEffects(rt, f);
+    this.frames.set(f.id, rt);
+  }
+
+  private disposeFrameRuntime(rt: FrameRuntime): void {
+    rt.surface?.dispose();
+    destroyTarget(rt.pingA);
+    destroyTarget(rt.pingB);
+    rt.layerFx.clear();
+  }
+
+  private rebuildLayerEffects(rt: FrameRuntime, f: Frame): void {
+    rt.layerFx.clear();
+    const asset = this.assets.get(f.assetId);
+    if (!asset) return;
+    for (const layer of f.layers) {
+      const shader = getShader(layer.shaderId);
+      const effects = getPasses(shader).map((pass, i) => this.createPassEffect(shader, pass, layer, asset, i));
+      rt.layerFx.set(layer.id, effects);
+    }
+  }
+
+  private createPassEffect(
+    shader: ShaderDefinition,
+    pass: ShaderPass,
+    layer: ShaderLayer,
+    asset: AssetRuntime,
+    index: number,
+  ): Effect {
+    const wgsl = wgslOf(pass);
+    const uniforms = toUniformValues(shader, layer.params);
+    const params: Record<string, number | number[]> = {
+      resolution: [asset.media.width, asset.media.height],
+      time: 0,
+      ...uniforms,
+      ...pass.constants,
+    };
+    if (pass.constants && "mode" in pass.constants && uniforms.sigma === undefined) {
+      params.sigma = 1;
+    }
+    if (shader.usesAtlas) {
+      params.atlas_cols = 1;
+      params.char_count = 1;
+    }
+    const set: Record<string, unknown> = {
+      params,
+      src: asset.texture,
+      samp: this.linearSampler,
+    };
+    if (hasBinding(wgsl, "orig")) set.orig = asset.texture;
+    if (hasBinding(wgsl, "mask")) set.mask = this.white;
+    if (hasBinding(wgsl, "atlas")) {
+      const atlas = this.atlasFor(layer.params);
+      set.atlas = atlas.texture;
+      set.atlas_samp = this.nearestSampler;
+    }
+    return effect(this.gpu, wgsl, {
+      label: `${shader.id}:${layer.id}:${index}`,
+      set,
     });
   }
 
-  private createEffect(f: Frame): Effect {
-    const asset = this.assets.get(f.assetId);
-    if (!asset) throw new Error(`Missing asset ${f.assetId} for frame ${f.id}`);
-    const shader = getShader(f.shaderId);
-    return effect(this.gpu, shader.source.wgsl + PREVIEW_VERTEX_STAGE, {
-      label: `${shader.id}:${f.id}`,
-      set: {
-        params: {
-          resolution: [asset.media.width, asset.media.height],
-          time: 0,
-          ...toUniformValues(shader, f.params),
-        },
+  private atlasFor(params: Record<string, ParamValue>): AtlasRuntime {
+    const image = renderCharsetAtlas(params);
+    const key = `${image.count}:${image.cols}:${String(params.charset_preset)}:${String(params.charset ?? "")}`;
+    const existing = this.atlases.get(key);
+    if (existing) return existing;
+    const texture = this.gpu.device.createTexture({
+      size: [image.canvas.width, image.canvas.height],
+      format: "rgba8unorm",
+      usage: ["texture_binding", "copy_dst", "render_attachment"],
+      label: `atlas:${key}`,
+    });
+    this.gpu.gpu.queue.copyExternalImageToTexture(
+      { source: image.canvas as OffscreenCanvas | HTMLCanvasElement },
+      { texture: texture.gpu },
+      [image.canvas.width, image.canvas.height],
+    );
+    const rt: AtlasRuntime = {
+      key,
+      texture,
+      cols: image.cols,
+      count: image.count,
+      width: image.canvas.width,
+      height: image.canvas.height,
+    };
+    this.atlases.set(key, rt);
+    return rt;
+  }
+
+  private ensurePing(rt: FrameRuntime, asset: AssetRuntime): [number, number] {
+    const size = cappedSize(asset.media.width, asset.media.height, this.maxDim);
+    if (!rt.pingA || !rt.pingB) {
+      rt.pingA = target(this.gpu, { size, format: "rgba8unorm", label: `${rt.frameId}:a` });
+      rt.pingB = target(this.gpu, { size, format: "rgba8unorm", label: `${rt.frameId}:b` });
+      rt.pingSize = size;
+      return size;
+    }
+    if (rt.pingSize[0] !== size[0] || rt.pingSize[1] !== size[1]) {
+      rt.pingA.resize(size);
+      rt.pingB.resize(size);
+      rt.pingSize = size;
+    }
+    return size;
+  }
+
+  private encodeStack(
+    f: { pass: (dest: Target | Surface, fx: Effect) => void },
+    frameDoc: Frame,
+    pingA: Target,
+    pingB: Target,
+    size: [number, number],
+    bypass: boolean,
+    time: number,
+  ): Target {
+    const asset = this.assets.get(frameDoc.assetId);
+    if (!asset) return pingA;
+    const rt = this.frames.get(frameDoc.id);
+
+    if (bypass) {
+      this.blitOffscreen.set({
         src: asset.texture,
         samp: this.linearSampler,
-        studio_window: { origin: [0, 0], size: [1, 1] },
-      },
-    });
+        params: { resolution: size, time },
+      });
+      f.pass(pingA, this.blitOffscreen);
+      return pingA;
+    }
+
+    const layers = visibleLayers(frameDoc);
+    let read: Texture = asset.texture;
+    let last: Target | null = null;
+
+    const other = (current: Target | null): Target => (current === pingA ? pingB : pingA);
+
+    for (const layer of layers) {
+      const shader = getShader(layer.shaderId);
+      const passes = getPasses(shader);
+      const effects = rt?.layerFx.get(layer.id);
+      const layerInput = read;
+      if (!effects || effects.length !== passes.length) continue;
+
+      for (let i = 0; i < passes.length; i++) {
+        const dest = other(last);
+        const wgsl = wgslOf(passes[i]);
+        const bag: Record<string, unknown> = {
+          src: read,
+          samp: this.linearSampler,
+          params: this.passParams(shader, layer, passes[i], size, time),
+        };
+        if (hasBinding(wgsl, "orig")) bag.orig = layerInput;
+        if (hasBinding(wgsl, "atlas")) {
+          const atlas = this.atlasFor(layer.params);
+          bag.atlas = atlas.texture;
+          bag.atlas_samp = this.nearestSampler;
+        }
+        effects[i].set(bag);
+        f.pass(dest, effects[i]);
+        read = dest.color;
+        last = dest;
+      }
+
+      if (needsMix(layer)) {
+        const dest = other(last);
+        const maskRt = layer.maskAssetId ? this.assets.get(layer.maskAssetId) : undefined;
+        this.mixEffect.set({
+          src: read,
+          orig: layerInput,
+          mask: maskRt?.texture ?? this.white,
+          samp: this.linearSampler,
+          params: {
+            resolution: size,
+            time,
+            opacity: layer.opacity,
+            invert: layer.maskInvert ? 1 : 0,
+            feather: layer.maskFeather,
+            contrast: layer.maskContrast,
+            has_mask: maskRt ? 1 : 0,
+          },
+        });
+        f.pass(dest, this.mixEffect);
+        read = dest.color;
+        last = dest;
+      }
+    }
+
+    if (!last) {
+      this.blitOffscreen.set({
+        src: asset.texture,
+        samp: this.linearSampler,
+        params: { resolution: size, time },
+      });
+      f.pass(pingA, this.blitOffscreen);
+      return pingA;
+    }
+    return last;
   }
 
-  private applyWindow(rt: FrameRuntime, view: UvWindow): void {
-    if (sameWindow(rt.window, view)) return;
-    rt.effect.set({ studio_window: { origin: [view[0], view[1]], size: [view[2], view[3]] } });
-    rt.window = view;
-    rt.dirty = true;
+  private passParams(
+    shader: ShaderDefinition,
+    layer: ShaderLayer,
+    pass: ShaderPass,
+    size: [number, number],
+    time: number,
+  ): Record<string, number | number[]> {
+    const atlas = shader.usesAtlas ? this.atlasFor(layer.params) : null;
+    const uniforms = toUniformValues(shader, layer.params);
+    const values: Record<string, number | number[]> = {
+      resolution: size,
+      time,
+      ...uniforms,
+      ...pass.constants,
+    };
+    if (pass.constants && "mode" in pass.constants && uniforms.sigma === undefined) {
+      values.sigma = 1;
+    }
+    if (atlas) {
+      values.atlas_cols = atlas.cols;
+      values.char_count = atlas.count;
+    }
+    return values;
   }
 
   private uploadVideoFrames(): void {
@@ -396,10 +702,6 @@ export class StudioEngine {
     }
   }
 
-  /**
-   * Keeps the swapchain matched to the on-screen canvas size (clamped to a sane maximum) and
-   * returns the part of the frame the canvas covers, or null when it has no visible area.
-   */
   private fitSurfaceToCanvas(rt: FrameRuntime): UvWindow | null {
     const canvas = rt.canvas!;
     const cssW = canvas.clientWidth;
@@ -413,7 +715,6 @@ export class StudioEngine {
     h = Math.max(1, Math.floor(h * scale));
     const size = rt.surface!.size;
     if (size[0] !== w || size[1] !== h) {
-      // Changing the backing store wipes the canvas, so it must be drawn again.
       rt.surface!.resize([w, h]);
       rt.dirty = true;
     }
@@ -432,7 +733,6 @@ export class StudioEngine {
 
 type EngineGlobal = typeof globalThis & { __shaderStudioEngine?: Promise<StudioEngine> };
 
-/** Lazily creates the single GPU engine for the page; survives React remounts and HMR. */
 export function getEngine(): Promise<StudioEngine> {
   const g = globalThis as EngineGlobal;
   if (!g.__shaderStudioEngine) {
@@ -444,7 +744,6 @@ export function getEngine(): Promise<StudioEngine> {
   return g.__shaderStudioEngine;
 }
 
-/** Drops the cached engine so the next `getEngine()` boots a fresh device (after device loss). */
 export function resetEngine(): void {
   const g = globalThis as EngineGlobal;
   const current = g.__shaderStudioEngine;

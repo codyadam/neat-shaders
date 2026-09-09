@@ -37,7 +37,11 @@ export function EngineProvider({ children }: { children: React.ReactNode }) {
     boot()
       .then((engine) => {
         if (cancelled) return;
-        engine.sync(useStudio.getState());
+    engine.sync({
+      assets: useStudio.getState().assets,
+      frames: useStudio.getState().frames,
+      bypassShaders: useStudio.getState().shadersBypassed || useStudio.getState().spaceHeld,
+    });
         setValue({ engine, status: "ready", error: null });
         void engine.gpu.gpu.lost.then((info) => {
           if (cancelled || info.reason === "destroyed") return;
@@ -67,7 +71,18 @@ export function EngineProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     if (!engine) return;
     const unsubscribeStore = useStudio.subscribe((state, prev) => {
-      if (state.assets !== prev.assets || state.frames !== prev.frames) engine.sync(state);
+      if (
+        state.assets !== prev.assets ||
+        state.frames !== prev.frames ||
+        state.shadersBypassed !== prev.shadersBypassed ||
+        state.spaceHeld !== prev.spaceHeld
+      ) {
+        engine.sync({
+          assets: state.assets,
+          frames: state.frames,
+          bypassShaders: state.shadersBypassed || state.spaceHeld,
+        });
+      }
     });
     const unsubscribeErrors = engine.onError((error) => {
       console.error(error);

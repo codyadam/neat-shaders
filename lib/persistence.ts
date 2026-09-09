@@ -1,8 +1,8 @@
 "use client";
 
 import { loadAsset, releaseMedia } from "@/lib/gpu/media";
-import { defaultParams, getShader } from "@/lib/shaders/registry";
-import { useStudio } from "@/lib/store";
+import { sanitizeFrame } from "@/lib/shaders/layers";
+import { useStudio, uid } from "@/lib/store";
 import type { Asset, Frame, Viewport } from "@/lib/types";
 
 /**
@@ -20,7 +20,7 @@ const DB_VERSION = 1;
 const FILES_STORE = "files";
 const WORKSPACE_STORE = "workspace";
 const WORKSPACE_KEY = "current";
-const WORKSPACE_VERSION = 1;
+const WORKSPACE_VERSION = 2;
 const SAVE_DEBOUNCE_MS = 400;
 
 interface StoredFile {
@@ -219,22 +219,6 @@ async function readWorkspace(): Promise<StoredWorkspace | null> {
   return record;
 }
 
-/** Fills in defaults for params added since the frame was saved and drops unknown shaders. */
-function sanitizeFrame(frame: Frame): Frame {
-  const shader = getShader(frame.shaderId);
-  const params = { ...defaultParams(shader) };
-  for (const p of shader.params) {
-    if (frame.params && p.key in frame.params) params[p.key] = frame.params[p.key];
-  }
-  return {
-    ...frame,
-    shaderId: shader.id,
-    params,
-    visible: frame.visible ?? true,
-    locked: frame.locked ?? false,
-  };
-}
-
 // ---------------------------------------------------------------------------
 // Restore
 
@@ -266,14 +250,14 @@ export function restoreWorkspace(): Promise<RestoreResult> {
         }
 
         const assetIds = new Set(assets.map((a) => a.id));
-        const frames = stored.frames.filter((f) => assetIds.has(f.assetId)).map(sanitizeFrame);
+        const frames = stored.frames.filter((f) => assetIds.has(f.assetId)).map((f) => sanitizeFrame(f, () => uid("layer")));
         const selectedId = frames.some((f) => f.id === stored.selectedId) ? stored.selectedId : null;
         const viewport =
           stored.viewport && Number.isFinite(stored.viewport.zoom) && stored.viewport.zoom > 0
             ? stored.viewport
             : useStudio.getState().viewport;
 
-        useStudio.setState({ assets, frames, selectedId, viewport });
+        useStudio.setState({ assets, frames, selectedId, selectedLayerId: null, viewport });
         if (status === "idle") setStatus("saved");
 
         // Drop files that no longer belong to any asset (e.g. a crash between delete and save).
@@ -369,7 +353,7 @@ export async function clearWorkspace(): Promise<void> {
     releaseMedia(asset.id);
     URL.revokeObjectURL(asset.url);
   }
-  useStudio.setState({ assets: [], frames: [], selectedId: null });
+  useStudio.setState({ assets: [], frames: [], selectedId: null, selectedLayerId: null });
   if (saveTimer !== null) {
     window.clearTimeout(saveTimer);
     saveTimer = null;

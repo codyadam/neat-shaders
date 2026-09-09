@@ -31,7 +31,7 @@ import {
   supportedVideoFormats,
   type ImageFormat,
 } from "@/lib/gpu/export";
-import { getShader } from "@/lib/shaders/registry";
+import { stackLabel } from "@/lib/shaders/layers";
 import { selectSelectedFrame, useStudio } from "@/lib/store";
 import type { Asset, Frame } from "@/lib/types";
 import { truncateName } from "@/lib/utils";
@@ -89,7 +89,7 @@ function ExportForm({
   const [scale, setScale] = React.useState(1);
   const [imageFormat, setImageFormat] = React.useState<ImageFormat>("png");
   const [quality, setQuality] = React.useState(0.92);
-  const [filename, setFilename] = React.useState(`${safeFilename(frame.name)}-${frame.shaderId}`);
+  const [filename, setFilename] = React.useState(`${safeFilename(frame.name)}-export`);
   const [fps, setFps] = React.useState(30);
   const [bitrate, setBitrate] = React.useState(12);
   const [videoMime, setVideoMime] = React.useState(videoFormats[0]?.mimeType ?? "");
@@ -162,7 +162,7 @@ function ExportForm({
           Export “{truncateName(frame.name)}”
         </DialogTitle>
         <DialogDescription>
-          {getShader(frame.shaderId).name} · source {asset.width}×{asset.height}
+          {stackLabel(frame)} · source {asset.width}×{asset.height}
           {isVideo && asset.duration ? ` · ${formatDuration(asset.duration)}` : ""}
         </DialogDescription>
       </DialogHeader>

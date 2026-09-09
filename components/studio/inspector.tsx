@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Download, Link2, Link2Off, Pause, Play, Repeat, RotateCcw, Scan } from "lucide-react";
+import { Download, Link2, Link2Off, Pause, Play, Plus, Repeat, RotateCcw, Scan } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,11 +13,13 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { NumberField, ParamControl } from "@/components/studio/param-control";
+import { ShaderCombobox } from "@/components/studio/shader-combobox";
 import { formatBytes, formatDuration } from "@/lib/gpu/export";
 import { getVideo } from "@/lib/gpu/media";
+import { MAX_LAYERS } from "@/lib/shaders/layers";
 import { SHADERS, getShader } from "@/lib/shaders/registry";
-import { selectSelectedFrame, useStudio } from "@/lib/store";
-import type { Asset, Frame } from "@/lib/types";
+import { selectSelectedFrame, selectSelectedLayer, useStudio } from "@/lib/store";
+import type { Asset, Frame, ShaderLayer } from "@/lib/types";
 import { truncateName } from "@/lib/utils";
 
 function Section({
@@ -85,6 +87,7 @@ function EmptyInspector() {
             ["Zoom to selection", "⇧ 2"],
             ["Zoom 100%", "⇧ 0"],
             ["Hide / show UI", "⇧ G"],
+            ["Compare original", "Space (hold)"],
           ].map(([k, v]) => (
             <React.Fragment key={k}>
               <dt className="text-muted-foreground">{k}</dt>
@@ -99,8 +102,8 @@ function EmptyInspector() {
 
 function FrameInspector({ frame }: { frame: Frame }) {
   const asset = useStudio((s) => s.assets.find((a) => a.id === frame.assetId));
-  const shader = getShader(frame.shaderId);
-  const { setFrameShader, setFrameParam, resetFrameParams, setExportOpen } = useStudio.getState();
+  const layer = useStudio(selectSelectedLayer);
+  const { addLayer, setExportOpen } = useStudio.getState();
 
   return (
     <ScrollArea className="h-full">
@@ -108,43 +111,35 @@ function FrameInspector({ frame }: { frame: Frame }) {
       <Separator />
       {asset && <MediaSection frame={frame} asset={asset} />}
       <Separator />
-      <Section
-        title="Shader"
-        action={
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon-xs" onClick={() => resetFrameParams(frame.id)}>
-                <RotateCcw />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="left">Reset parameters</TooltipContent>
-          </Tooltip>
-        }
-      >
-        <Select value={frame.shaderId} onValueChange={(v) => setFrameShader(frame.id, v)}>
-          <SelectTrigger className="h-8 w-full text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {SHADERS.map((s) => (
-              <SelectItem key={s.id} value={s.id} className="text-xs">
-                {s.name}
-              </SelectItem>
+      {layer ? (
+        <LayerSection frame={frame} layer={layer} />
+      ) : (
+        <Section
+          title="Shader stack"
+          action={
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              disabled={frame.layers.length >= MAX_LAYERS}
+              onClick={() => addLayer(frame.id)}
+            >
+              <Plus />
+            </Button>
+          }
+        >
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            Select a shader in the layers panel to edit it. Output of each layer feeds the next.
+          </p>
+          <ul className="space-y-1">
+            {frame.layers.map((l, i) => (
+              <li key={l.id} className="text-[11px] text-muted-foreground">
+                {i + 1}. {getShader(l.shaderId).name}
+                {!l.visible ? " (hidden)" : ""}
+              </li>
             ))}
-          </SelectContent>
-        </Select>
-        <p className="text-[11px] leading-snug text-muted-foreground">{shader.description}</p>
-        <div className="space-y-4 pt-1">
-          {shader.params.map((p) => (
-            <ParamControl
-              key={p.key}
-              def={p}
-              value={frame.params[p.key] ?? p.default}
-              onChange={(v) => setFrameParam(frame.id, p.key, v)}
-            />
-          ))}
-        </div>
-      </Section>
+          </ul>
+        </Section>
+      )}
       <Separator />
       <Section title="Export">
         <Button className="w-full" size="sm" onClick={() => setExportOpen(true)}>
@@ -152,10 +147,139 @@ function FrameInspector({ frame }: { frame: Frame }) {
           Export {asset?.kind === "video" ? "video or still" : "image"}
         </Button>
         <p className="text-[11px] leading-snug text-muted-foreground">
-          Renders at the source resolution (or a scale of it), independent of the on-canvas size.
+          Renders at the source resolution (or a scale of it), independent of on-canvas zoom. Export always includes the
+          shader stack.
         </p>
       </Section>
     </ScrollArea>
+  );
+}
+
+function LayerSection({ frame, layer }: { frame: Frame; layer: ShaderLayer }) {
+  const shader = getShader(layer.shaderId);
+  const assets = useStudio((s) => s.assets);
+  const { setLayerShader, setLayerParam, resetLayerParams, updateLayer, addLayer } = useStudio.getState();
+
+  return (
+    <Section
+      title="Shader"
+      action={
+        <div className="flex items-center gap-0.5">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                disabled={frame.layers.length >= MAX_LAYERS}
+                onClick={() => addLayer(frame.id)}
+              >
+                <Plus />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left">Add shader</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon-xs" onClick={() => resetLayerParams(frame.id, layer.id)}>
+                <RotateCcw />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left">Reset parameters</TooltipContent>
+          </Tooltip>
+        </div>
+      }
+    >
+      <ShaderCombobox value={layer.shaderId} onChange={(id) => setLayerShader(frame.id, layer.id, id)} />
+      <p className="text-[11px] leading-snug text-muted-foreground">{shader.description}</p>
+      <div className="space-y-4 pt-1">
+        {shader.params.map((p) => (
+          <ParamControl
+            key={p.key}
+            def={p}
+            value={layer.params[p.key] ?? p.default}
+            onChange={(v) => setLayerParam(frame.id, layer.id, p.key, v)}
+          />
+        ))}
+      </div>
+      <Separator />
+      <div className="space-y-3 pt-1">
+        <div className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">Blend</div>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs text-muted-foreground">Opacity</Label>
+            <span className="font-mono text-[11px] tabular-nums">{layer.opacity.toFixed(2)}</span>
+          </div>
+          <Slider
+            min={0}
+            max={1}
+            step={0.01}
+            value={[layer.opacity]}
+            onValueChange={([v]) => updateLayer(frame.id, layer.id, { opacity: v })}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Mask</Label>
+          <Select
+            value={layer.maskAssetId ?? "none"}
+            onValueChange={(v) => updateLayer(frame.id, layer.id, { maskAssetId: v === "none" ? null : v })}
+          >
+            <SelectTrigger className="h-8 w-full text-xs">
+              <SelectValue placeholder="No mask" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none" className="text-xs">
+                None
+              </SelectItem>
+              {assets.map((a) => (
+                  <SelectItem key={a.id} value={a.id} className="text-xs">
+                    {truncateName(a.name)}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            Another imported image or video, used as a luma mask. A depth map here gives a depth-of-field look on blur.
+          </p>
+        </div>
+        <div className="flex items-center justify-between">
+          <Label className="text-xs text-muted-foreground" htmlFor="mask-invert">
+            Invert mask
+          </Label>
+          <Switch
+            id="mask-invert"
+            size="sm"
+            checked={layer.maskInvert}
+            onCheckedChange={(v) => updateLayer(frame.id, layer.id, { maskInvert: v })}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs text-muted-foreground">Feather</Label>
+            <span className="font-mono text-[11px] tabular-nums">{layer.maskFeather.toFixed(1)}</span>
+          </div>
+          <Slider
+            min={0}
+            max={8}
+            step={0.1}
+            value={[layer.maskFeather]}
+            onValueChange={([v]) => updateLayer(frame.id, layer.id, { maskFeather: v })}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs text-muted-foreground">Mask contrast</Label>
+            <span className="font-mono text-[11px] tabular-nums">{layer.maskContrast.toFixed(2)}</span>
+          </div>
+          <Slider
+            min={0}
+            max={4}
+            step={0.05}
+            value={[layer.maskContrast]}
+            onValueChange={([v]) => updateLayer(frame.id, layer.id, { maskContrast: v })}
+          />
+        </div>
+      </div>
+    </Section>
   );
 }
 

@@ -18,12 +18,28 @@ export interface Asset {
   mimeType: string;
 }
 
+/** One shader in a frame's stack. The first visible layer reads the media; each next layer reads the previous output. */
+export interface ShaderLayer {
+  id: string;
+  shaderId: string;
+  params: Record<string, ParamValue>;
+  visible: boolean;
+  /** Mix with this layer's input (0 = skip the effect, 1 = full). */
+  opacity: number;
+  /** Optional grayscale mask from another imported asset (luma → effect strength). */
+  maskAssetId: string | null;
+  maskInvert: boolean;
+  /** Blur the mask in source pixels before applying it. */
+  maskFeather: number;
+  /** Contrast around mid-grey applied to the mask luma. */
+  maskContrast: number;
+}
+
 export interface Frame {
   id: string;
   name: string;
   assetId: string;
-  shaderId: string;
-  params: Record<string, ParamValue>;
+  layers: ShaderLayer[];
   /** World-space position and size (canvas units at zoom 1). */
   x: number;
   y: number;

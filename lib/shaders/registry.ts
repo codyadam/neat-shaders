@@ -5,8 +5,11 @@ import kuwaharaSource from "./wgsl/kuwahara.wgsl";
 import litSurfaceSource from "./wgsl/lit-surface.wgsl";
 import passthroughSource from "./wgsl/passthrough.wgsl";
 import pixelateSource from "./wgsl/pixelate.wgsl";
+import { EXTRA_SHADERS } from "./extra";
 
-export type ParamValue = number | boolean | [number, number] | [number, number, number];
+export type ParamValue = number | boolean | string | [number, number] | [number, number, number];
+
+export type ShaderGroup = "Painterly" | "Stylized" | "ASCII" | "Blur" | "Color" | "Atmosphere" | "Utility";
 
 export type ParamDef =
   | {
@@ -62,21 +65,52 @@ export type ParamDef =
       options: { value: number; label: string }[];
       default: number;
       description?: string;
+    }
+  | {
+      /** Free text, not packed into the GPU uniform (used for ASCII character ramps). */
+      type: "string";
+      key: string;
+      label: string;
+      default: string;
+      placeholder?: string;
+      description?: string;
     };
+
+/** One draw in a shader that needs more than a single fragment pass (bloom, separable blur, anisotropic Kuwahara). */
+export interface ShaderPass {
+  source: ShaderSource;
+  /** Merged into `params` for this pass only (e.g. blur axis). */
+  constants?: Record<string, number | number[]>;
+}
 
 export interface ShaderDefinition {
   id: string;
   name: string;
   description: string;
-  /** Loader-resolved WGSL. Every shader binds `params` (uniform), `src` (texture_2d) and `samp` (sampler). */
-  source: ShaderSource;
+  group: ShaderGroup;
+  /**
+   * Single-pass WGSL. Every pass binds `params`, `src` and `samp`.
+   * Multipass shaders may also sample `orig` (the layer input) by declaring it.
+   */
+  source?: ShaderSource;
+  /** When set, these run in order; `src` of pass N is the previous pass's output. */
+  passes?: ShaderPass[];
+  /** Upload a glyph atlas as `atlas` / `atlas_samp` from the charset string param. */
+  usesAtlas?: boolean;
   params: ParamDef[];
 }
 
-export const SHADERS: ShaderDefinition[] = [
+export function getPasses(def: ShaderDefinition): ShaderPass[] {
+  if (def.passes && def.passes.length > 0) return def.passes;
+  if (def.source) return [{ source: def.source }];
+  throw new Error(`Shader "${def.id}" has no WGSL source.`);
+}
+
+const BUILTIN_SHADERS: ShaderDefinition[] = [
   {
     id: "kuwahara",
     name: "Kuwahara",
+    group: "Painterly",
     description: "Sector-based Kuwahara filter. Painterly smoothing that keeps edges crisp.",
     source: kuwaharaSource,
     params: [
@@ -125,6 +159,7 @@ export const SHADERS: ShaderDefinition[] = [
   {
     id: "pixelate",
     name: "Pixelate",
+    group: "Stylized",
     description: "Mosaic pixelation with posterize and optional tint.",
     source: pixelateSource,
     params: [
@@ -161,6 +196,7 @@ export const SHADERS: ShaderDefinition[] = [
   {
     id: "dot-grid",
     name: "Dot grid",
+    group: "Stylized",
     description:
       "Halftone dot field that enters as a staggered wave, then idles with a roaming highlight that swells nearby dots.",
     source: dotGridSource,
@@ -419,6 +455,7 @@ export const SHADERS: ShaderDefinition[] = [
   {
     id: "halftone",
     name: "Halftone",
+    group: "Stylized",
     description:
       "Fixed-grid dot halftone: dot size follows darkness (or brightness when inverted), near-background cells are skipped, dots take a tint or the quantised source colour.",
     source: halftoneSource,
@@ -548,6 +585,7 @@ export const SHADERS: ShaderDefinition[] = [
   {
     id: "lit-surface",
     name: "Lit surface",
+    group: "Stylized",
     description:
       "Hashed rounded cells on a spacing grid light up around a focus: brighter cells grow, take a palette colour and split chromatically. The focus can sweep, sit still or flood the field; ripples are optional.",
     source: litSurfaceSource,
@@ -833,6 +871,7 @@ export const SHADERS: ShaderDefinition[] = [
   {
     id: "passthrough",
     name: "Original",
+    group: "Utility",
     description: "No processing. Handy as a reference next to a filtered copy.",
     source: passthroughSource,
     params: [
@@ -849,7 +888,14 @@ export const SHADERS: ShaderDefinition[] = [
   },
 ];
 
-export const DEFAULT_SHADER_ID = SHADERS[0].id;
+const PASSTHROUGH_INDEX = BUILTIN_SHADERS.findIndex((s) => s.id === "passthrough");
+export const SHADERS: ShaderDefinition[] = [
+  ...BUILTIN_SHADERS.slice(0, PASSTHROUGH_INDEX),
+  ...EXTRA_SHADERS,
+  ...BUILTIN_SHADERS.slice(PASSTHROUGH_INDEX),
+];
+
+export const DEFAULT_SHADER_ID = "kuwahara";
 
 export function getShader(id: string): ShaderDefinition {
   return SHADERS.find((s) => s.id === id) ?? SHADERS[0];
@@ -857,9 +903,13 @@ export function getShader(id: string): ShaderDefinition {
 
 const TIME_REFERENCE = /\bparams\.time\b/;
 
+export function passSourceWgsl(pass: ShaderPass): string {
+  return pass.source.wgsl;
+}
+
 /** True when the shader reads `params.time`, so its output changes even while its inputs do not. */
 export function isAnimated(def: ShaderDefinition): boolean {
-  return TIME_REFERENCE.test(def.source.wgsl);
+  return getPasses(def).some((pass) => TIME_REFERENCE.test(passSourceWgsl(pass)));
 }
 
 export function defaultParams(def: ShaderDefinition): Record<string, ParamValue> {
@@ -892,6 +942,8 @@ export function toUniformValues(
       case "vec2":
       case "color":
         out[p.key] = Array.isArray(value) ? [...value] : [...p.default];
+        break;
+      case "string":
         break;
     }
   }
