@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Download, Link2, Link2Off, Pause, Play, Plus, Repeat, RotateCcw, Scan } from "lucide-react";
+import { Download, Link2, Link2Off, Pause, Play, Plus, Repeat, RotateCcw, Scan, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { NumberField, ParamControl } from "@/components/studio/param-control";
 import { ShaderCombobox } from "@/components/studio/shader-combobox";
+import { useImportFiles } from "@/components/studio/use-import";
 import { formatBytes, formatDuration } from "@/lib/gpu/export";
 import { getVideo } from "@/lib/gpu/media";
 import { MAX_LAYERS } from "@/lib/shaders/layers";
@@ -159,6 +160,8 @@ function LayerSection({ frame, layer }: { frame: Frame; layer: ShaderLayer }) {
   const shader = getShader(layer.shaderId);
   const assets = useStudio((s) => s.assets);
   const { setLayerShader, setLayerParam, resetLayerParams, updateLayer, addLayer } = useStudio.getState();
+  const { openPicker, busy } = useImportFiles();
+  const charsetPreset = Number(layer.params.charset_preset ?? 0);
 
   return (
     <Section
@@ -192,14 +195,17 @@ function LayerSection({ frame, layer }: { frame: Frame; layer: ShaderLayer }) {
       <ShaderCombobox value={layer.shaderId} onChange={(id) => setLayerShader(frame.id, layer.id, id)} />
       <p className="text-[11px] leading-snug text-muted-foreground">{shader.description}</p>
       <div className="space-y-4 pt-1">
-        {shader.params.map((p) => (
-          <ParamControl
-            key={p.key}
-            def={p}
-            value={layer.params[p.key] ?? p.default}
-            onChange={(v) => setLayerParam(frame.id, layer.id, p.key, v)}
-          />
-        ))}
+        {shader.params.map((p) => {
+          if (p.key === "charset" && charsetPreset !== 4) return null;
+          return (
+            <ParamControl
+              key={p.key}
+              def={p}
+              value={layer.params[p.key] ?? p.default}
+              onChange={(v) => setLayerParam(frame.id, layer.id, p.key, v)}
+            />
+          );
+        })}
       </div>
       <Separator />
       <div className="space-y-3 pt-1">
@@ -219,24 +225,39 @@ function LayerSection({ frame, layer }: { frame: Frame; layer: ShaderLayer }) {
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">Mask</Label>
-          <Select
-            value={layer.maskAssetId ?? "none"}
-            onValueChange={(v) => updateLayer(frame.id, layer.id, { maskAssetId: v === "none" ? null : v })}
-          >
-            <SelectTrigger className="h-8 w-full text-xs">
-              <SelectValue placeholder="No mask" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none" className="text-xs">
-                None
-              </SelectItem>
-              {assets.map((a) => (
+          <div className="flex gap-1">
+            <Select
+              value={layer.maskAssetId ?? "none"}
+              onValueChange={(v) => updateLayer(frame.id, layer.id, { maskAssetId: v === "none" ? null : v })}
+            >
+              <SelectTrigger className="h-8 min-w-0 flex-1 text-xs">
+                <SelectValue placeholder="No mask" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none" className="text-xs">
+                  None
+                </SelectItem>
+                {assets.map((a) => (
                   <SelectItem key={a.id} value={a.id} className="text-xs">
                     {truncateName(a.name)}
                   </SelectItem>
                 ))}
-            </SelectContent>
-          </Select>
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 px-2 text-xs"
+              disabled={busy}
+              onClick={async () => {
+                const ids = await openPicker({ placeFrames: false });
+                if (ids[0]) updateLayer(frame.id, layer.id, { maskAssetId: ids[0] });
+              }}
+            >
+              <Upload data-icon="inline-start" />
+              Import
+            </Button>
+          </div>
           <p className="text-[11px] leading-snug text-muted-foreground">
             Another imported image or video, used as a luma mask. A depth map here gives a depth-of-field look on blur.
           </p>

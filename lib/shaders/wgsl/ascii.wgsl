@@ -12,6 +12,7 @@ struct Params {
   coverage: f32,
   edge: f32,
   atlas_cols: i32,
+  atlas_rows: i32,
   char_count: i32,
 }
 
@@ -74,9 +75,10 @@ fn sobel(uv: vec2f) -> f32 {
   let n = max(params.char_count, 1);
   let idx = clamp(i32(floor(l * f32(n - 1) + 0.5)), 0, n - 1);
   let cols = max(params.atlas_cols, 1);
+  let rows = max(params.atlas_rows, 1);
   let col = idx % cols;
   let row = idx / cols;
-  let atlas_uv = (vec2f(f32(col), f32(row)) + local) / vec2f(f32(cols), f32(cols));
+  let atlas_uv = (vec2f(f32(col), f32(row)) + local) / vec2f(f32(cols), f32(rows));
   let glyph = textureSampleLevel(atlas, atlas_samp, atlas_uv, 0.0).r;
 
   var ink = params.ink;

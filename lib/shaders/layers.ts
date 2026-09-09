@@ -83,11 +83,7 @@ export function sanitizeFrame(frame: LegacyFrame, nextId: () => string): Frame {
 
 export function needsMix(layer: ShaderLayer): boolean {
   if (layer.opacity < 0.999) return true;
-  if (layer.maskAssetId) return true;
-  if (layer.maskInvert) return true;
-  if (layer.maskFeather > 0.01) return true;
-  if (Math.abs(layer.maskContrast - 1) > 0.01) return true;
-  return false;
+  return Boolean(layer.maskAssetId);
 }
 
 export function visibleLayers(frame: Frame): ShaderLayer[] {

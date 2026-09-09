@@ -7,6 +7,7 @@ const MAX_CHARS = 96;
 export interface AtlasImage {
   canvas: OffscreenCanvas | HTMLCanvasElement;
   cols: number;
+  rows: number;
   count: number;
 }
 
@@ -47,5 +48,5 @@ export function renderCharsetAtlas(params: Record<string, ParamValue>): AtlasIma
     const y = Math.floor(i / cols) * CELL + CELL / 2;
     ctx.fillText(ch, x, y);
   });
-  return { canvas, cols, count: glyphs.length };
+  return { canvas, cols, rows, count: glyphs.length };
 }

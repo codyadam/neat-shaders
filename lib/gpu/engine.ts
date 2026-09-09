@@ -46,6 +46,7 @@ interface AtlasRuntime {
   key: string;
   texture: Texture;
   cols: number;
+  rows: number;
   count: number;
   width: number;
   height: number;
@@ -497,6 +498,7 @@ export class StudioEngine {
     }
     if (shader.usesAtlas) {
       params.atlas_cols = 1;
+      params.atlas_rows = 1;
       params.char_count = 1;
     }
     const set: Record<string, unknown> = {
@@ -537,6 +539,7 @@ export class StudioEngine {
       key,
       texture,
       cols: image.cols,
+      rows: image.rows,
       count: image.count,
       width: image.canvas.width,
       height: image.canvas.height,
@@ -673,6 +676,7 @@ export class StudioEngine {
     }
     if (atlas) {
       values.atlas_cols = atlas.cols;
+      values.atlas_rows = atlas.rows;
       values.char_count = atlas.count;
     }
     return values;
