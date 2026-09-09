@@ -3,6 +3,7 @@
 import * as React from "react";
 import {
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   Copy,
   Eye,
@@ -24,6 +25,7 @@ import { useImportFiles } from "@/components/studio/use-import";
 import { useEngine } from "@/components/studio/engine-context";
 import { formatBytes, formatDuration } from "@/lib/gpu/export";
 import { releaseMedia } from "@/lib/gpu/media";
+import { MAX_LAYERS } from "@/lib/shaders/layers";
 import { getShader } from "@/lib/shaders/registry";
 import { useStudio, viewportCenterWorld } from "@/lib/store";
 import type { Asset, Frame } from "@/lib/types";
@@ -67,19 +69,21 @@ function LayersTab() {
     <ScrollArea className="h-full">
       <ul className="p-1.5">
         {ordered.map((f) => (
-          <LayerRow key={f.id} frame={f} />
+          <FrameTree key={f.id} frame={f} />
         ))}
       </ul>
     </ScrollArea>
   );
 }
 
-function LayerRow({ frame }: { frame: Frame }) {
-  const selected = useStudio((s) => s.selectedId === frame.id);
+function FrameTree({ frame }: { frame: Frame }) {
+  const selected = useStudio((s) => s.selectedId === frame.id && s.selectedLayerId === null);
   const asset = useStudio((s) => s.assets.find((a) => a.id === frame.assetId));
-  const { select, updateFrame, removeFrame, duplicateFrame, reorderFrame } = useStudio.getState();
+  const { select, updateFrame, removeFrame, duplicateFrame, reorderFrame, addLayer } = useStudio.getState();
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(frame.name);
+  const layers = React.useMemo(() => [...frame.layers].reverse(), [frame.layers]);
+  const [expanded, setExpanded] = React.useState(true);
 
   const commit = () => {
     setEditing(false);
@@ -89,75 +93,161 @@ function LayerRow({ frame }: { frame: Frame }) {
   };
 
   return (
-    <li
-      className={cn(
-        "group flex h-8 items-center gap-1.5 rounded-md px-1.5 text-xs",
-        selected ? "bg-(--selection)/15 text-foreground" : "hover:bg-muted/60",
-        !frame.visible && "opacity-50",
-      )}
-      onClick={() => select(frame.id)}
-      onDoubleClick={() => {
-        setDraft(frame.name);
-        setEditing(true);
-      }}
-    >
-      {asset?.kind === "video" ? (
-        <Film className="size-3.5 shrink-0 text-muted-foreground" />
-      ) : (
-        <ImageIcon className="size-3.5 shrink-0 text-muted-foreground" />
-      )}
-      {editing ? (
-        <input
-          autoFocus
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") commit();
-            if (e.key === "Escape") {
-              setDraft(frame.name);
-              setEditing(false);
-            }
+    <li className="mb-0.5">
+      <div
+        className={cn(
+          "group flex h-8 items-center gap-1 rounded-md px-1 text-xs",
+          selected ? "bg-(--selection)/15 text-foreground" : "hover:bg-muted/60",
+          !frame.visible && "opacity-50",
+        )}
+        onClick={() => select(frame.id)}
+        onDoubleClick={() => {
+          setDraft(frame.name);
+          setEditing(true);
+        }}
+      >
+        <button
+          type="button"
+          aria-label={expanded ? "Collapse shaders" : "Expand shaders"}
+          aria-expanded={expanded}
+          className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+          onClick={(e) => {
+            e.stopPropagation();
+            setExpanded((v) => !v);
           }}
-          className="h-6 min-w-0 flex-1 rounded border bg-background px-1 outline-none"
-        />
-      ) : (
-        <span className="flex min-w-0 flex-1 items-baseline gap-1" title={frame.name}>
-          <span className="min-w-0 truncate">{truncateName(frame.name)}</span>
-          <span className="shrink-0 truncate text-muted-foreground">· {getShader(frame.shaderId).name}</span>
-        </span>
-      )}
+        >
+          {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+        </button>
+        {asset?.kind === "video" ? (
+          <Film className="size-3.5 shrink-0 text-muted-foreground" />
+        ) : (
+          <ImageIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        )}
+        {editing ? (
+          <input
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commit();
+              if (e.key === "Escape") {
+                setDraft(frame.name);
+                setEditing(false);
+              }
+            }}
+            className="h-6 min-w-0 flex-1 rounded border bg-background px-1 outline-none"
+          />
+        ) : (
+          <span className="min-w-0 flex-1 truncate" title={frame.name}>
+            {truncateName(frame.name)}
+          </span>
+        )}
 
-      <div className="hidden items-center group-hover:flex">
-        <IconButton label="Move up" onClick={() => reorderFrame(frame.id, "up")}>
-          <ChevronUp />
+        <div className="hidden items-center group-hover:flex">
+          <IconButton label="Move up" onClick={() => reorderFrame(frame.id, "up")}>
+            <ChevronUp />
+          </IconButton>
+          <IconButton label="Move down" onClick={() => reorderFrame(frame.id, "down")}>
+            <ChevronDown />
+          </IconButton>
+          <IconButton label="Duplicate" onClick={() => duplicateFrame(frame.id)}>
+            <Copy />
+          </IconButton>
+          <IconButton label="Add shader" onClick={() => addLayer(frame.id)}>
+            <Plus />
+          </IconButton>
+          <IconButton label="Delete" onClick={() => removeFrame(frame.id)}>
+            <Trash2 />
+          </IconButton>
+        </div>
+        <IconButton
+          label={frame.locked ? "Unlock" : "Lock"}
+          className={cn(!frame.locked && "hidden group-hover:inline-flex")}
+          onClick={() => updateFrame(frame.id, { locked: !frame.locked })}
+        >
+          {frame.locked ? <Lock /> : <LockOpen />}
         </IconButton>
-        <IconButton label="Move down" onClick={() => reorderFrame(frame.id, "down")}>
-          <ChevronDown />
-        </IconButton>
-        <IconButton label="Duplicate" onClick={() => duplicateFrame(frame.id)}>
-          <Copy />
-        </IconButton>
-        <IconButton label="Delete" onClick={() => removeFrame(frame.id)}>
-          <Trash2 />
+        <IconButton
+          label={frame.visible ? "Hide" : "Show"}
+          className={cn(frame.visible && "hidden group-hover:inline-flex")}
+          onClick={() => updateFrame(frame.id, { visible: !frame.visible })}
+        >
+          {frame.visible ? <Eye /> : <EyeOff />}
         </IconButton>
       </div>
+      {expanded && (
+        <ul className="ml-4 border-l border-border/70 pl-1">
+          {layers.map((layer) => (
+            <ShaderLayerRow key={layer.id} frame={frame} layer={layer} />
+          ))}
+          <li>
+            <button
+              type="button"
+              disabled={frame.layers.length >= MAX_LAYERS}
+              onClick={() => addLayer(frame.id)}
+              className="flex h-7 w-full items-center gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-muted/60 hover:text-foreground disabled:opacity-40"
+            >
+              <Plus className="size-3" />
+              Add shader
+            </button>
+          </li>
+        </ul>
+      )}
+    </li>
+  );
+}
+
+function ShaderLayerRow({ frame, layer }: { frame: Frame; layer: import("@/lib/types").ShaderLayer }) {
+  const selected = useStudio((s) => s.selectedId === frame.id && s.selectedLayerId === layer.id);
+  const { selectLayer, updateLayer, removeLayer, duplicateLayer, reorderLayer } = useStudio.getState();
+  const shader = getShader(layer.shaderId);
+
+  return (
+    <li
+      className={cn(
+        "group flex h-7 items-center gap-1 rounded-md px-1.5 text-[11px]",
+        selected ? "bg-(--selection)/15 text-foreground" : "hover:bg-muted/60",
+        !layer.visible && "opacity-50",
+      )}
+      onClick={(e) => {
+        e.stopPropagation();
+        selectLayer(frame.id, layer.id);
+      }}
+    >
+      <SparkleIcon />
+      <span className="min-w-0 flex-1 truncate" title={shader.name}>
+        {shader.name}
+      </span>
+      <div className="hidden items-center group-hover:flex">
+        <IconButton label="Move up" onClick={() => reorderLayer(frame.id, layer.id, "up")}>
+          <ChevronUp />
+        </IconButton>
+        <IconButton label="Move down" onClick={() => reorderLayer(frame.id, layer.id, "down")}>
+          <ChevronDown />
+        </IconButton>
+        <IconButton label="Duplicate" onClick={() => duplicateLayer(frame.id, layer.id)}>
+          <Copy />
+        </IconButton>
+        {frame.layers.length > 1 && (
+          <IconButton label="Delete" onClick={() => removeLayer(frame.id, layer.id)}>
+            <Trash2 />
+          </IconButton>
+        )}
+      </div>
       <IconButton
-        label={frame.locked ? "Unlock" : "Lock"}
-        className={cn(!frame.locked && "hidden group-hover:inline-flex")}
-        onClick={() => updateFrame(frame.id, { locked: !frame.locked })}
+        label={layer.visible ? "Hide" : "Show"}
+        className={cn(layer.visible && "hidden group-hover:inline-flex")}
+        onClick={() => updateLayer(frame.id, layer.id, { visible: !layer.visible })}
       >
-        {frame.locked ? <Lock /> : <LockOpen />}
-      </IconButton>
-      <IconButton
-        label={frame.visible ? "Hide" : "Show"}
-        className={cn(frame.visible && "hidden group-hover:inline-flex")}
-        onClick={() => updateFrame(frame.id, { visible: !frame.visible })}
-      >
-        {frame.visible ? <Eye /> : <EyeOff />}
+        {layer.visible ? <Eye /> : <EyeOff />}
       </IconButton>
     </li>
   );
+}
+
+function SparkleIcon() {
+  return <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/70" />;
 }
 
 function IconButton({

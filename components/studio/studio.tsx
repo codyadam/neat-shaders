@@ -136,7 +136,13 @@ function StudioShell() {
       } else if (e.key === "Delete" || e.key === "Backspace") {
         if (s.selectedId) {
           e.preventDefault();
-          s.removeFrame(s.selectedId);
+          if (s.selectedLayerId) {
+            const frame = s.frames.find((f) => f.id === s.selectedId);
+            if (frame && frame.layers.length > 1) s.removeLayer(s.selectedId, s.selectedLayerId);
+            else s.removeFrame(s.selectedId);
+          } else {
+            s.removeFrame(s.selectedId);
+          }
         }
       } else if (e.key === "Escape") {
         s.select(null);

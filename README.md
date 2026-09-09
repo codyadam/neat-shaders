@@ -1,24 +1,27 @@
 # Shader Studio
 
-A Figma-like canvas for applying WebGPU shaders to images and videos, then exporting the result. Drop media onto an infinite canvas, pick a shader per frame, tune its parameters live, and export a PNG/JPEG/WebP at native resolution or record the processed video.
+A Figma-like canvas for applying WebGPU shaders to images and videos, then exporting the result. Drop media onto an infinite canvas, stack shaders on a frame, tune parameters live, and export a PNG/JPEG/WebP at native resolution or record the processed video.
 
 Built with Next.js (App Router), React, Tailwind CSS, shadcn/ui and [vgpu](https://vgpu.sh) for WebGPU rendering. Everything runs client-side; there is no server component, so it deploys to Vercel as-is.
 
 ## Features
 
 - Infinite canvas with pan (Space + drag, wheel, hand tool), zoom (⌘/Ctrl + wheel, pinch, shortcuts), zoom-to-fit and zoom-to-selection.
+- Hold **Space** (or toggle the compare button) to see the original media on the canvas. Export still includes the shader stack. Space also pans, as before.
 - Hide the UI with Shift+G or the eye button in the toolbar to look at the result alone; panning and zooming keep working, and a small pill brings the UI back.
 - Frames: each imported image or video becomes a frame you can select, move, resize (aspect-locked corner handles), rename, reorder, hide and lock. Import by dropping files on the canvas, pasting an image (⌘/Ctrl+V — screenshots and copied bitmaps included), or the Import button (⌘/Ctrl+I).
+- Shader stack: each frame has an ordered list of shaders (up to 16). The first visible layer reads the media; each next layer reads the previous output. Nested under the frame in the layers panel, like Figma. Per layer: mute, opacity, and an optional luma mask from another asset (invert / feather / contrast) — a depth map on a blur layer gives a depth-of-field look.
 - Assets panel: imported media, drag an asset onto the canvas to make another frame from it.
-- Inspector: frame geometry, media info, video playback controls (play/pause, loop, scrub), shader picker and typed parameter controls (float, int, vec2, bool, color).
-- Shaders (WGSL, driven through vgpu effects):
-  - **Kuwahara**: sector-based Kuwahara filter ported from the Godot `canvas_item` shader (`kernel_spread`, `radius`, `canvas_scale`, `edge_clamp`).
-  - **Pixelate**: mosaic + posterize + optional tint, as an example of the parameter system.
-  - **Dot grid**: halftone dot field that enters as a staggered wave (rows / columns / diagonal / radial / random order), then idles with a roaming highlight that swells nearby dots. Dot size can follow the source luminance, dots can take the source colour, and shape, pitch, padding, colours, loop and highlight timing are all tunable.
-  - **Halftone**: fixed-grid dot halftone driven by luminance. Dot size follows darkness (or brightness when inverted), a luma threshold skips background cells, optional minimum dot, tint or quantised source colour (1–8 bits/channel), shapes, softness, background and source backdrop.
-  - **Lit surface**: hashed rounded cells on a spacing grid that light up around a focus — brighter cells grow, pick a colour from a palette derived from the main colour and split chromatically along the radial direction, composited additively (or normally). The focus can sweep along a path (linear, diagonal, bounce, orbit, figure eight), sit still, or flood the whole field; optional ripples travel out from the focus as a crest with inverse glow and suppression.
-  - **Original**: passthrough for A/B comparison.
-- Local persistence: imported files are stored in the browser (IndexedDB) together with the frames, viewport and selection, and restored on the next visit, so closing the tab does not lose progress. Autosave is debounced and flushed when the page is hidden; the header shows the save state, and the trash button in the toolbar clears the workspace (including the saved copy).
+- Inspector: frame geometry, media info, video playback controls (play/pause, loop, scrub), searchable shader combobox and typed parameter controls (float, int, vec2, bool, color, select, string).
+- Shaders (WGSL, driven through vgpu effects). Multipass shaders (bloom, separable blur, anisotropic Kuwahara) run as ping-pong GPU passes.
+  - **Painterly**: Kuwahara (8-sector), classic 4-quadrant Kuwahara, Papari (circular sectors + polynomial weights + inverse-variance blend), anisotropic Kuwahara (structure tensor), Tomita–Tsuji, symmetric nearest neighbour.
+  - **Stylized**: Pixelate, Dot grid, Halftone, Lit surface.
+  - **ASCII**: brightness-to-glyph ramp with presets or a custom character set, source colour or ink, contrast, invert, coverage, edge emphasis.
+  - **Blur**: Gaussian (separable), box, Dual Kawase, motion / directional.
+  - **Color**: Hue, contrast, saturation, grayscale, tint, opacity.
+  - **Atmosphere**: Grain (optional animated), vignette, bloom (extract → blur → composite).
+  - **Original**: passthrough.
+- Local persistence: imported files are stored in the browser (IndexedDB) together with the frames, viewport and selection, and restored on the next visit, so closing the tab does not lose progress. Autosave is debounced and flushed when the page is hidden; the header shows the save state, and the trash button in the toolbar clears the workspace (including the saved copy). Older single-shader workspaces are migrated to a one-layer stack.
 - Export:
   - Images: PNG, JPEG or WebP, at 0.25×–8× of the source resolution, rendered offscreen and read back from the GPU (independent of on-canvas zoom).
   - Videos: plays the clip once while recording the shader output with `MediaRecorder` (MP4/H.264 or WebM depending on the browser), with scale, frame rate, bitrate and optional source audio. Still-frame export is available for videos too.
@@ -50,7 +53,7 @@ Import the repository in Vercel; the Next.js preset is detected automatically an
 
    ```wgsl
    struct Params {
-     resolution: vec2f,   // source texture size, set by the engine
+     resolution: vec2f,   // destination texture size, set by the engine
      time: f32,           // seconds since start, set by the engine
      // ...your parameters
    }
@@ -63,7 +66,14 @@ Import the repository in Vercel; the Next.js preset is detected automatically an
 
    `uv` is top-origin (0,0 = top-left), matching WebGPU textures, so sampling `src` at `uv` needs no flip.
 
-2. Register it in `lib/shaders/registry.ts` with a `params` schema. Each entry maps 1:1 onto a `Params` field: `float` → `f32`, `int` → `i32`, `select` (dropdown of labelled options) → `i32`, `bool` → `u32` (0/1), `vec2` → `vec2f`, `color` → `vec3f`. The inspector controls, defaults and uniform packing are generated from the schema.
+   Optional extra textures, declared only when the pass needs them:
+
+   - `orig` — the layer input (used by bloom composite and anisotropic Kuwahara).
+   - `atlas` / `atlas_samp` — glyph atlas for the ASCII shader.
+
+   Multipass shaders list `passes` in the registry. Pass 0 reads the layer input; each later pass reads the previous output. Constants such as a blur axis can be merged into `params` per pass.
+
+2. Register it in `lib/shaders/registry.ts` (built-ins) or `lib/shaders/extra.ts` with a `params` schema and a `group`. Each entry maps 1:1 onto a `Params` field: `float` → `f32`, `int` → `i32`, `select` (dropdown of labelled options) → `i32`, `bool` → `u32` (0/1), `vec2` → `vec2f`, `color` → `vec3f`. `string` params stay on the CPU (ASCII character ramps).
 
    Animated shaders read `params.time` (seconds since the engine started). Keep them stateless in `time` — e.g. derive loops with `fract(time / period)` — so still exports and video capture render the same thing the preview shows.
 
@@ -75,16 +85,17 @@ Import the repository in Vercel; the Next.js preset is detected automatically an
 app/                    Next.js app router (layout, page, global styles)
 components/studio/      Toolbar, canvas viewport, frame view, layers/assets panel, inspector, export dialog
 components/ui/          shadcn/ui primitives
-lib/gpu/engine.ts       vgpu engine: device, asset textures, per-frame surfaces/effects, render loop, offscreen renders
+lib/gpu/engine.ts       vgpu engine: device, asset textures, ping-pong stacks, render loop, offscreen renders
 lib/gpu/media.ts        Image/video decoding and the media registry
 lib/gpu/export.ts       Image encoding and MediaRecorder-based video capture
-lib/shaders/            WGSL sources and the shader registry (parameter schema)
-lib/store.ts            Zustand store: assets, frames, selection, viewport, tools
+lib/shaders/            WGSL sources, registry, extra shaders, layer helpers
+lib/store.ts            Zustand store: assets, frames, shader layers, selection, viewport, tools
 lib/persistence.ts      IndexedDB persistence: stored files + workspace snapshot, restore on boot, debounced autosave
 ```
 
 ## Notes
 
-- Preview canvases only cover the part of a frame that is inside the viewport, so zooming in never costs more than the screen's own pixels: the engine appends a vertex stage that remaps `uv` to the visible window and renders just that region at native resolution (still capped at 4096 px). Frames whose shader does not read `params.time` are redrawn only when their inputs, size or window change. Exports use the source resolution times the chosen scale, up to the device's `maxTextureDimension2D`.
+- The stack is rendered at the source resolution (capped at 4096 px) into ping-pong targets; the on-canvas blit still only covers the visible window. Heavy painterly filters on large images can be expensive — lower the source size or radius if the preview stutters.
+- Frames whose shaders do not read `params.time` are redrawn only when their inputs or parameters change. Exports use the source resolution times the chosen scale, up to the device's `maxTextureDimension2D`.
 - Video export records in real time at the display refresh cadence, throttled to the chosen frame rate. Heavy shaders at large sizes may drop below the target rate on slow GPUs; lower the scale in that case.
 - `next build` does not validate WGSL; use `npx vgpu check` (see above) before shipping shader changes.

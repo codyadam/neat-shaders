@@ -10,6 +10,7 @@ import {
   MousePointer2,
   Plus,
   Sparkles,
+  SquareSplitHorizontal,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -72,6 +73,8 @@ export function Toolbar() {
   const selectedId = useStudio((s) => s.selectedId);
   const setExportOpen = useStudio((s) => s.setExportOpen);
   const toggleUi = useStudio((s) => s.toggleUi);
+  const shadersBypassed = useStudio((s) => s.shadersBypassed);
+  const toggleShadersBypassed = useStudio((s) => s.toggleShadersBypassed);
   const { openPicker, busy } = useImportFiles();
   const { status } = useEngine();
   const saveStatus = usePersistenceStatus();
@@ -192,6 +195,17 @@ export function Toolbar() {
 
       <Separator orientation="vertical" className="mx-1 h-6!" />
 
+      <Hint label="Compare original" shortcut="Space">
+        <Button
+          variant={shadersBypassed ? "secondary" : "ghost"}
+          size="icon-sm"
+          aria-pressed={shadersBypassed}
+          aria-label="Compare original"
+          onClick={toggleShadersBypassed}
+        >
+          <SquareSplitHorizontal />
+        </Button>
+      </Hint>
       <Hint label="Hide UI" shortcut="⇧G">
         <Button variant="ghost" size="icon-sm" aria-label="Hide UI" onClick={toggleUi}>
           <EyeOff />

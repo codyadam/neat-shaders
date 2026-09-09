@@ -259,6 +259,19 @@ export function ParamControl({ def, value, onChange }: ParamControlProps) {
         </div>
       );
     }
+    case "string":
+      return (
+        <div className="space-y-1.5">
+          <ParamLabel def={def} htmlFor={`param-${def.key}`} />
+          <Input
+            id={`param-${def.key}`}
+            value={String(value ?? def.default)}
+            placeholder={def.placeholder}
+            onChange={(e) => onChange(e.target.value)}
+            className="h-7 font-mono text-xs"
+          />
+        </div>
+      );
     case "color": {
       const rgb = Array.isArray(value) && value.length === 3 ? value : def.default;
       const hex = rgbToHex(rgb);
