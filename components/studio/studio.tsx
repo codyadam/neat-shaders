@@ -10,8 +10,11 @@ import { Inspector } from "@/components/studio/inspector";
 import { LeftPanel } from "@/components/studio/left-panel";
 import { Toolbar } from "@/components/studio/toolbar";
 import { filesFromClipboard, useImportFiles } from "@/components/studio/use-import";
+import { applyStackText } from "@/components/studio/stack-clipboard";
 import { usePersistence } from "@/components/studio/use-persistence";
+import { looksLikeStack } from "@/lib/shaders/stack-clipboard";
 import { useStudio } from "@/lib/store";
+import { toast } from "sonner";
 
 export function Studio() {
   return (
@@ -67,6 +70,18 @@ function usePasteImport(importFiles: (files: File[]) => Promise<unknown>) {
       if (useStudio.getState().exportOpen) return;
       if (shortcutHeld && consumed) {
         e.preventDefault();
+        return;
+      }
+      const text = e.clipboardData?.getData("text/plain") ?? "";
+      if (looksLikeStack(text)) {
+        e.preventDefault();
+        if (shortcutHeld) consumed = true;
+        const selectedId = useStudio.getState().selectedId;
+        if (!selectedId) {
+          toast.error("Select a frame to paste the shader stack");
+          return;
+        }
+        applyStackText(selectedId, text);
         return;
       }
       const files = filesFromClipboard(e.clipboardData);

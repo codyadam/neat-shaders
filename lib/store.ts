@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import type { Asset, Frame, ShaderLayer, Tool, Viewport } from "@/lib/types";
 import { DEFAULT_LAYER, MAX_LAYERS, sanitizeLayer } from "@/lib/shaders/layers";
+import { materializeStack, type StackClipboardLayer } from "@/lib/shaders/stack-clipboard";
 import { DEFAULT_SHADER_ID, defaultParams, getShader, type ParamValue } from "@/lib/shaders/registry";
 
 export const MIN_ZOOM = 0.02;
@@ -46,6 +47,7 @@ interface StudioState {
   removeLayer: (frameId: string, layerId: string) => void;
   duplicateLayer: (frameId: string, layerId: string) => string | null;
   reorderLayer: (frameId: string, layerId: string, direction: "up" | "down") => void;
+  applyStack: (frameId: string, drafts: StackClipboardLayer[]) => boolean;
   setLayerShader: (frameId: string, layerId: string, shaderId: string) => void;
   setLayerParam: (frameId: string, layerId: string, key: string, value: ParamValue) => void;
   resetLayerParams: (frameId: string, layerId: string) => void;
@@ -222,6 +224,19 @@ export const useStudio = create<StudioState>((set, get) => ({
       selectedLayerId: copy.id,
     }));
     return copy.id;
+  },
+
+  applyStack: (frameId, drafts) => {
+    const frame = get().frames.find((f) => f.id === frameId);
+    if (!frame) return false;
+    const layers = materializeStack(drafts, () => uid("layer"));
+    if (layers.length === 0) return false;
+    set((s) => ({
+      frames: mapFrame(s.frames, frameId, (f) => ({ ...f, layers })),
+      selectedId: frameId,
+      selectedLayerId: layers[layers.length - 1]?.id ?? null,
+    }));
+    return true;
   },
 
   reorderLayer: (frameId, layerId, direction) =>

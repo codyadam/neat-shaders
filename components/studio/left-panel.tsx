@@ -5,6 +5,8 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  ClipboardCopy,
+  ClipboardPaste,
   Copy,
   Eye,
   EyeOff,
@@ -27,6 +29,7 @@ import { formatBytes, formatDuration } from "@/lib/gpu/export";
 import { releaseMedia } from "@/lib/gpu/media";
 import { MAX_LAYERS } from "@/lib/shaders/layers";
 import { getShader } from "@/lib/shaders/registry";
+import { copyFrameStack, pasteFrameStack } from "@/components/studio/stack-clipboard";
 import { useStudio, viewportCenterWorld } from "@/lib/store";
 import type { Asset, Frame } from "@/lib/types";
 import { cn, truncateName } from "@/lib/utils";
@@ -151,8 +154,14 @@ function FrameTree({ frame }: { frame: Frame }) {
           <IconButton label="Move down" onClick={() => reorderFrame(frame.id, "down")}>
             <ChevronDown />
           </IconButton>
-          <IconButton label="Duplicate" onClick={() => duplicateFrame(frame.id)}>
+          <IconButton label="Duplicate frame" onClick={() => duplicateFrame(frame.id)}>
             <Copy />
+          </IconButton>
+          <IconButton label="Copy stack" onClick={() => void copyFrameStack(frame)}>
+            <ClipboardCopy />
+          </IconButton>
+          <IconButton label="Paste stack" onClick={() => void pasteFrameStack(frame.id)}>
+            <ClipboardPaste />
           </IconButton>
           <IconButton label="Add shader" onClick={() => addLayer(frame.id)}>
             <Plus />
@@ -181,16 +190,22 @@ function FrameTree({ frame }: { frame: Frame }) {
           {layers.map((layer) => (
             <ShaderLayerRow key={layer.id} frame={frame} layer={layer} />
           ))}
-          <li>
+          <li className="flex items-center gap-0.5">
             <button
               type="button"
               disabled={frame.layers.length >= MAX_LAYERS}
               onClick={() => addLayer(frame.id)}
-              className="flex h-7 w-full items-center gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-muted/60 hover:text-foreground disabled:opacity-40"
+              className="flex h-7 min-w-0 flex-1 items-center gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-muted/60 hover:text-foreground disabled:opacity-40"
             >
               <Plus className="size-3" />
               Add shader
             </button>
+            <IconButton label="Copy stack" onClick={() => void copyFrameStack(frame)}>
+              <ClipboardCopy />
+            </IconButton>
+            <IconButton label="Paste stack" onClick={() => void pasteFrameStack(frame.id)}>
+              <ClipboardPaste />
+            </IconButton>
           </li>
         </ul>
       )}

@@ -121,7 +121,7 @@ const BUILTIN_SHADERS: ShaderDefinition[] = [
         min: 0.001,
         max: 50,
         step: 0.01,
-        default: 2,
+        default: 3,
         description: "Distance between samples, in source pixels.",
       },
       {
