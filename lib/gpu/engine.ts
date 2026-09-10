@@ -60,12 +60,18 @@ interface FrameRuntime {
   pingA?: Target;
   pingB?: Target;
   pingSize: [number, number];
+  /** Last stack encode written into ping A/B; reused when only the visible window moves. */
+  stackOut?: Target;
   canvas?: HTMLCanvasElement;
   host?: HTMLElement;
   surface?: Surface;
   visible: boolean;
+  /** Stack content changed; re-encode into ping targets. */
   dirty: boolean;
+  /** On-screen canvas was resized (wiped) and must be presented again. */
+  presentDirty: boolean;
   animated: boolean;
+  /** Window currently uploaded to the preview blit `studio_window` uniform. */
   window: UvWindow | null;
   assetVersion: number;
 }
@@ -128,6 +134,10 @@ function destroyTarget(t?: Target): void {
   (t as unknown as { destroy?: () => void } | undefined)?.destroy?.();
 }
 
+function sameWindow(a: UvWindow | null, b: UvWindow): boolean {
+  return a !== null && a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3];
+}
+
 export class StudioEngine {
   readonly gpu: Gpu;
   private readonly assets = new Map<string, AssetRuntime>();
@@ -182,20 +192,30 @@ export class StudioEngine {
           rt.assetVersion = asset.version;
           rt.dirty = true;
         }
-        if (!rt.dirty && !rt.animated && !this.bypassShaders) continue;
+        // Pan/zoom only moves the visible window of an already-encoded stack. Re-blit that
+        // window; do not skip the present (that left a stale crop stretched across the canvas).
+        const windowChanged = !sameWindow(rt.window, view);
+        const needStack = rt.dirty || rt.animated || !rt.stackOut;
+        const needPresent = needStack || windowChanged || rt.presentDirty;
+        if (!needPresent) continue;
         const frameDoc = this.liveFrame(rt.frameId);
         if (!frameDoc || !asset) continue;
-        const size = this.ensurePing(rt, asset);
-        const out = this.encodeStack(f, frameDoc, rt.pingA!, rt.pingB!, size, this.bypassShaders, t);
+        if (needStack) {
+          const size = this.ensurePing(rt, asset);
+          rt.stackOut = this.encodeStack(f, frameDoc, rt.pingA!, rt.pingB!, size, this.bypassShaders, t);
+          rt.dirty = false;
+        }
+        const out = rt.stackOut;
+        if (!out) continue;
         this.blitPreview.set({
           src: out.color,
           samp: this.linearSampler,
-          params: { resolution: size, time: t },
+          params: { resolution: rt.pingSize, time: t },
           studio_window: { origin: [view[0], view[1]], size: [view[2], view[3]] },
         });
         f.pass(rt.surface, this.blitPreview);
         rt.window = view;
-        rt.dirty = false;
+        rt.presentDirty = false;
       }
     });
   }
@@ -290,6 +310,8 @@ export class StudioEngine {
       alphaMode: "premultiplied",
       label: `frame:${frameId}`,
     });
+    rt.window = null;
+    rt.presentDirty = true;
     rt.dirty = true;
   }
 
@@ -452,6 +474,7 @@ export class StudioEngine {
       pingSize: [1, 1],
       visible: f.visible,
       dirty: true,
+      presentDirty: true,
       animated: frameAnimated(f),
       window: null,
       assetVersion: asset.version,
@@ -464,6 +487,7 @@ export class StudioEngine {
     rt.surface?.dispose();
     destroyTarget(rt.pingA);
     destroyTarget(rt.pingB);
+    rt.stackOut = undefined;
     rt.layerFx.clear();
   }
 
@@ -554,12 +578,14 @@ export class StudioEngine {
       rt.pingA = target(this.gpu, { size, format: "rgba8unorm", label: `${rt.frameId}:a` });
       rt.pingB = target(this.gpu, { size, format: "rgba8unorm", label: `${rt.frameId}:b` });
       rt.pingSize = size;
+      rt.stackOut = undefined;
       return size;
     }
     if (rt.pingSize[0] !== size[0] || rt.pingSize[1] !== size[1]) {
       rt.pingA.resize(size);
       rt.pingB.resize(size);
       rt.pingSize = size;
+      rt.stackOut = undefined;
     }
     return size;
   }
@@ -719,8 +745,10 @@ export class StudioEngine {
     h = Math.max(1, Math.floor(h * scale));
     const size = rt.surface!.size;
     if (size[0] !== w || size[1] !== h) {
+      // Changing the backing store wipes the canvas, so it must be presented again. The stack
+      // ping-pong still holds the full-res result, so this is a blit, not a re-encode.
       rt.surface!.resize([w, h]);
-      rt.dirty = true;
+      rt.presentDirty = true;
     }
     if (!rt.host) return FULL_WINDOW;
     const hostRect = rt.host.getBoundingClientRect();
