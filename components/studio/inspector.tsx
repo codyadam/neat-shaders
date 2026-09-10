@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Download, Link2, Link2Off, Pause, Play, Plus, Repeat, RotateCcw, Scan, Upload } from "lucide-react";
+import { ClipboardCopy, ClipboardPaste, Download, Link2, Link2Off, Pause, Play, Plus, Repeat, RotateCcw, Scan, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { NumberField, ParamControl } from "@/components/studio/param-control";
 import { ShaderCombobox } from "@/components/studio/shader-combobox";
+import { copyFrameStack, pasteFrameStack } from "@/components/studio/stack-clipboard";
 import { useImportFiles } from "@/components/studio/use-import";
 import { formatBytes, formatDuration } from "@/lib/gpu/export";
 import { getVideo } from "@/lib/gpu/media";
@@ -80,7 +81,7 @@ function EmptyInspector() {
             ["Zoom", "⌘ + wheel · pinch"],
             ["Select / Hand", "V · H"],
             ["Import", "⌘ I"],
-            ["Paste image", "⌘ V"],
+            ["Paste image or stack", "⌘ V"],
             ["Export", "⌘ E"],
             ["Duplicate", "⌘ D"],
             ["Delete", "⌫"],
@@ -118,18 +119,37 @@ function FrameInspector({ frame }: { frame: Frame }) {
         <Section
           title="Shader stack"
           action={
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              disabled={frame.layers.length >= MAX_LAYERS}
-              onClick={() => addLayer(frame.id)}
-            >
-              <Plus />
-            </Button>
+            <div className="flex items-center gap-0.5">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon-xs" onClick={() => void copyFrameStack(frame)}>
+                    <ClipboardCopy />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="left">Copy stack</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon-xs" onClick={() => void pasteFrameStack(frame.id)}>
+                    <ClipboardPaste />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="left">Paste stack</TooltipContent>
+              </Tooltip>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                disabled={frame.layers.length >= MAX_LAYERS}
+                onClick={() => addLayer(frame.id)}
+              >
+                <Plus />
+              </Button>
+            </div>
           }
         >
           <p className="text-[11px] leading-snug text-muted-foreground">
-            Select a shader in the layers panel to edit it. Output of each layer feeds the next.
+            Select a shader in the layers panel to edit it. Output of each layer feeds the next. Copy the stack as JSON
+            and paste it onto another frame.
           </p>
           <ul className="space-y-1">
             {frame.layers.map((l, i) => (
@@ -168,6 +188,22 @@ function LayerSection({ frame, layer }: { frame: Frame; layer: ShaderLayer }) {
       title="Shader"
       action={
         <div className="flex items-center gap-0.5">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon-xs" onClick={() => void copyFrameStack(frame)}>
+                <ClipboardCopy />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left">Copy stack</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon-xs" onClick={() => void pasteFrameStack(frame.id)}>
+                <ClipboardPaste />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left">Paste stack</TooltipContent>
+          </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
