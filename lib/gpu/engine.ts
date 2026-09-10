@@ -57,6 +57,15 @@ interface FrameRuntime {
   assetId: string;
   shaderKey: string;
   layerFx: Map<string, Effect[]>;
+  /** One mix pass per layer so stacked mixes in the same submit keep their own uniforms. */
+  mixFx: Map<string, Effect>;
+  /**
+   * Preview blit is per-frame: vgpu writes `studio_window` into a single GPUBuffer in place.
+   * Sharing one blit across canvases made the last window (and src) win for every present in the
+   * same submit — two frames mixed, and panning one off-screen stretched the other.
+   */
+  blitPreview: Effect;
+  blitOffscreen: Effect;
   pingA?: Target;
   pingB?: Target;
   pingSize: [number, number];
@@ -160,9 +169,8 @@ export class StudioEngine {
   private readonly linearSampler: GPUSampler;
   private readonly nearestSampler: GPUSampler;
   private readonly white: Texture;
-  private mixEffect!: Effect;
-  private blitOffscreen!: Effect;
-  private blitPreview!: Effect;
+  /** Final copy for export only; never shared with the preview loop encoder. */
+  private exportBlit!: Effect;
   private loop: FrameLoopHandle | null = null;
   private readonly errorListeners = new Set<EngineErrorListener>();
   private readonly maxDim: number;
@@ -188,7 +196,7 @@ export class StudioEngine {
     this.maxDim = Math.min(gpu.gpu.limits.maxTextureDimension2D, MAX_PREVIEW_DIM);
     this.white = this.makeSolidTexture([255, 255, 255, 255]);
     this.time = clock(gpu);
-    this.createSharedEffects();
+    this.exportBlit = this.createBlitEffects("export").blitOffscreen;
 
     gpu.onError((error) => {
       for (const cb of this.errorListeners) cb(error);
@@ -216,18 +224,18 @@ export class StudioEngine {
         if (!frameDoc || !asset) continue;
         if (needStack) {
           const size = this.ensurePing(rt, asset);
-          rt.stackOut = this.encodeStack(f, frameDoc, rt.pingA!, rt.pingB!, size, this.bypassShaders, t);
+          rt.stackOut = this.encodeStack(f, frameDoc, rt, rt.pingA!, rt.pingB!, size, this.bypassShaders, t);
           rt.dirty = false;
         }
         const out = rt.stackOut;
         if (!out) continue;
-        this.blitPreview.set({
+        rt.blitPreview.set({
           src: out.color,
           samp: this.linearSampler,
           params: { resolution: rt.pingSize, time: t },
           studio_window: { origin: [view[0], view[1]], size: [view[2], view[3]] },
         });
-        f.pass(rt.surface, this.blitPreview);
+        f.pass(rt.surface, rt.blitPreview);
         rt.window = view;
         rt.presentDirty = false;
       }
@@ -365,10 +373,11 @@ export class StudioEngine {
     const pingB = target(this.gpu, { size, format: "rgba8unorm", label: "export-b" });
     try {
       const frameDoc = this.liveFrame(frameId);
-      if (!frameDoc) throw new Error("Frame is not ready on the GPU yet.");
+      const rt = this.frames.get(frameId);
+      if (!frameDoc || !rt) throw new Error("Frame is not ready on the GPU yet.");
       let out: Target = pingA;
       frame(this.gpu, (f) => {
-        out = this.encodeStack(f, frameDoc, pingA, pingB, size, false, this.time.time);
+        out = this.encodeStack(f, frameDoc, rt, pingA, pingB, size, false, this.time.time);
       });
       return await out.read();
     } finally {
@@ -390,20 +399,21 @@ export class StudioEngine {
 
   renderToSurface(frameId: string, exportSurface: Surface): void {
     const frameDoc = this.liveFrame(frameId);
-    if (!frameDoc) return;
+    const rt = this.frames.get(frameId);
+    if (!frameDoc || !rt) return;
     this.uploadVideoFrames();
     const size = exportSurface.size as [number, number];
     const pingA = target(this.gpu, { size, format: "rgba8unorm", label: "export-va" });
     const pingB = target(this.gpu, { size, format: "rgba8unorm", label: "export-vb" });
     try {
       frame(this.gpu, (f) => {
-        const out = this.encodeStack(f, frameDoc, pingA, pingB, size, false, this.time.time);
-        this.blitOffscreen.set({
+        const out = this.encodeStack(f, frameDoc, rt, pingA, pingB, size, false, this.time.time);
+        this.exportBlit.set({
           src: out.color,
           samp: this.linearSampler,
           params: { resolution: size, time: this.time.time },
         });
-        f.pass(exportSurface, this.blitOffscreen);
+        f.pass(exportSurface, this.exportBlit);
       });
     } finally {
       destroyTarget(pingA);
@@ -425,10 +435,10 @@ export class StudioEngine {
     this.gpu.dispose();
   }
 
-  private createSharedEffects(): void {
+  private createMixEffect(layerId: string): Effect {
     const dummy = this.white;
-    this.mixEffect = effect(this.gpu, mixSource.wgsl, {
-      label: "mix",
+    return effect(this.gpu, mixSource.wgsl, {
+      label: `mix:${layerId}`,
       set: {
         params: {
           resolution: [1, 1],
@@ -445,23 +455,29 @@ export class StudioEngine {
         samp: this.linearSampler,
       },
     });
-    this.blitOffscreen = effect(this.gpu, blitSource.wgsl, {
-      label: "blit",
-      set: {
-        params: { resolution: [1, 1], time: 0 },
-        src: dummy,
-        samp: this.linearSampler,
-      },
-    });
-    this.blitPreview = effect(this.gpu, blitSource.wgsl + PREVIEW_VERTEX_STAGE, {
-      label: "blit-preview",
-      set: {
-        params: { resolution: [1, 1], time: 0 },
-        src: dummy,
-        samp: this.linearSampler,
-        studio_window: { origin: [0, 0], size: [1, 1] },
-      },
-    });
+  }
+
+  private createBlitEffects(frameId: string): { blitPreview: Effect; blitOffscreen: Effect } {
+    const dummy = this.white;
+    return {
+      blitOffscreen: effect(this.gpu, blitSource.wgsl, {
+        label: `blit:${frameId}`,
+        set: {
+          params: { resolution: [1, 1], time: 0 },
+          src: dummy,
+          samp: this.linearSampler,
+        },
+      }),
+      blitPreview: effect(this.gpu, blitSource.wgsl + PREVIEW_VERTEX_STAGE, {
+        label: `blit-preview:${frameId}`,
+        set: {
+          params: { resolution: [1, 1], time: 0 },
+          src: dummy,
+          samp: this.linearSampler,
+          studio_window: { origin: [0, 0], size: [1, 1] },
+        },
+      }),
+    };
   }
 
   private makeSolidTexture(rgba: [number, number, number, number]): Texture {
@@ -500,11 +516,15 @@ export class StudioEngine {
   private createFrameRuntime(f: Frame): void {
     const asset = this.assets.get(f.assetId);
     if (!asset) return;
+    const blits = this.createBlitEffects(f.id);
     const rt: FrameRuntime = {
       frameId: f.id,
       assetId: f.assetId,
       shaderKey: shaderKeyOf(f),
       layerFx: new Map(),
+      mixFx: new Map(),
+      blitPreview: blits.blitPreview,
+      blitOffscreen: blits.blitOffscreen,
       pingSize: [1, 1],
       visible: f.visible,
       dirty: true,
@@ -524,16 +544,19 @@ export class StudioEngine {
     destroyTarget(rt.pingB);
     rt.stackOut = undefined;
     rt.layerFx.clear();
+    rt.mixFx.clear();
   }
 
   private rebuildLayerEffects(rt: FrameRuntime, f: Frame): void {
     rt.layerFx.clear();
+    rt.mixFx.clear();
     const asset = this.assets.get(f.assetId);
     if (!asset) return;
     for (const layer of f.layers) {
       const shader = getShader(layer.shaderId);
       const effects = getPasses(shader).map((pass, i) => this.createPassEffect(shader, pass, layer, asset, i));
       rt.layerFx.set(layer.id, effects);
+      rt.mixFx.set(layer.id, this.createMixEffect(layer.id));
     }
   }
 
@@ -628,6 +651,7 @@ export class StudioEngine {
   private encodeStack(
     f: { pass: (dest: Target | Surface, fx: Effect) => void },
     frameDoc: Frame,
+    rt: FrameRuntime,
     pingA: Target,
     pingB: Target,
     size: [number, number],
@@ -636,15 +660,14 @@ export class StudioEngine {
   ): Target {
     const asset = this.assets.get(frameDoc.assetId);
     if (!asset) return pingA;
-    const rt = this.frames.get(frameDoc.id);
 
     if (bypass) {
-      this.blitOffscreen.set({
+      rt.blitOffscreen.set({
         src: asset.texture,
         samp: this.linearSampler,
         params: { resolution: size, time },
       });
-      f.pass(pingA, this.blitOffscreen);
+      f.pass(pingA, rt.blitOffscreen);
       return pingA;
     }
 
@@ -657,7 +680,7 @@ export class StudioEngine {
     for (const layer of layers) {
       const shader = getShader(layer.shaderId);
       const passes = getPasses(shader);
-      const effects = rt?.layerFx.get(layer.id);
+      const effects = rt.layerFx.get(layer.id);
       const layerInput = read;
       if (!effects || effects.length !== passes.length) continue;
 
@@ -684,7 +707,12 @@ export class StudioEngine {
       if (needsMix(layer)) {
         const dest = other(last);
         const maskRt = layer.maskAssetId ? this.assets.get(layer.maskAssetId) : undefined;
-        this.mixEffect.set({
+        let mix = rt.mixFx.get(layer.id);
+        if (!mix) {
+          mix = this.createMixEffect(layer.id);
+          rt.mixFx.set(layer.id, mix);
+        }
+        mix.set({
           src: read,
           orig: layerInput,
           mask: maskRt?.texture ?? this.white,
@@ -699,19 +727,19 @@ export class StudioEngine {
             has_mask: maskRt ? 1 : 0,
           },
         });
-        f.pass(dest, this.mixEffect);
+        f.pass(dest, mix);
         read = dest.color;
         last = dest;
       }
     }
 
     if (!last) {
-      this.blitOffscreen.set({
+      rt.blitOffscreen.set({
         src: asset.texture,
         samp: this.linearSampler,
         params: { resolution: size, time },
       });
-      f.pass(pingA, this.blitOffscreen);
+      f.pass(pingA, rt.blitOffscreen);
       return pingA;
     }
     return last;
