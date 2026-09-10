@@ -47,16 +47,31 @@ export const FrameView = React.memo(function FrameView({
     return () => engine.detachCanvas(frame.id, canvas);
   }, [engine, frame.id]);
 
+  React.useLayoutEffect(() => {
+    if (!engine) return;
+    if (!clip || screen.w < 1 || screen.h < 1) {
+      engine.setPreviewWindow(frame.id, null);
+      return;
+    }
+    engine.setPreviewWindow(frame.id, [
+      (clip.x - screen.x) / screen.w,
+      (clip.y - screen.y) / screen.h,
+      clip.w / screen.w,
+      clip.h / screen.h,
+    ]);
+  }, [engine, frame.id, clip, screen.x, screen.y, screen.w, screen.h]);
+
   return (
     <div
       ref={hostRef}
       data-frame-id={frame.id}
-      className="absolute"
-      style={{
-        left: screen.x,
-        top: screen.y,
-        width: Math.max(1, screen.w),
-        height: Math.max(1, screen.h),
+        className="absolute"
+        style={{
+          left: screen.x,
+          top: screen.y,
+          width: Math.max(1, screen.w),
+          height: Math.max(1, screen.h),
+          overflow: "hidden",
         display: frame.visible ? "block" : "none",
         cursor: interactive ? (frame.locked ? "default" : "move") : undefined,
         boxShadow: "0 1px 3px rgba(0,0,0,0.25), 0 8px 24px -12px rgba(0,0,0,0.35)",

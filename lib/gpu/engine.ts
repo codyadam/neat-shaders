@@ -73,6 +73,12 @@ interface FrameRuntime {
   animated: boolean;
   /** Window currently uploaded to the preview blit `studio_window` uniform. */
   window: UvWindow | null;
+  /**
+   * Visible UV window from React layout (clip / frame screen rect). Preferred over measuring
+   * getBoundingClientRect, which can collapse to the overflow clip and squash the whole image into
+   * the visible slice.
+   */
+  layoutWindow: UvWindow | null;
   assetVersion: number;
 }
 
@@ -136,6 +142,14 @@ function destroyTarget(t?: Target): void {
 
 function sameWindow(a: UvWindow | null, b: UvWindow): boolean {
   return a !== null && a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3];
+}
+
+/** Layout coordinates of the canvas inside its host — not viewport-clipped bounding boxes. */
+function windowFromOffsets(canvas: HTMLCanvasElement, host: HTMLElement): UvWindow | null {
+  const hw = host.offsetWidth;
+  const hh = host.offsetHeight;
+  if (hw < 1 || hh < 1) return null;
+  return [canvas.offsetLeft / hw, canvas.offsetTop / hh, canvas.offsetWidth / hw, canvas.offsetHeight / hh];
 }
 
 export class StudioEngine {
@@ -305,7 +319,7 @@ export class StudioEngine {
     rt.canvas = canvas;
     rt.host = host;
     rt.surface = surface(this.gpu, canvas, {
-      size: [Math.max(1, canvas.width), Math.max(1, canvas.height)],
+      autoResize: true,
       dpr: [1, 2],
       alphaMode: "premultiplied",
       label: `frame:${frameId}`,
@@ -315,6 +329,25 @@ export class StudioEngine {
     rt.dirty = true;
   }
 
+  /**
+   * Visible fraction of the frame the on-screen canvas covers, in host layout space (top-left origin).
+   * Call from React layout whenever the clip rect moves so pan/zoom does not squash the image.
+   */
+  setPreviewWindow(frameId: string, window: UvWindow | null): void {
+    const rt = this.frames.get(frameId);
+    if (!rt || this.disposed) return;
+    if (window === null) {
+      if (rt.layoutWindow !== null) {
+        rt.layoutWindow = null;
+        rt.presentDirty = true;
+      }
+      return;
+    }
+    if (sameWindow(rt.layoutWindow, window)) return;
+    rt.layoutWindow = window;
+    rt.presentDirty = true;
+  }
+
   detachCanvas(frameId: string, canvas: HTMLCanvasElement): void {
     const rt = this.frames.get(frameId);
     if (!rt || rt.canvas !== canvas) return;
@@ -322,6 +355,7 @@ export class StudioEngine {
     rt.surface = undefined;
     rt.canvas = undefined;
     rt.host = undefined;
+    rt.layoutWindow = null;
   }
 
   async renderToBytes(frameId: string, width: number, height: number): Promise<Uint8Array> {
@@ -477,6 +511,7 @@ export class StudioEngine {
       presentDirty: true,
       animated: frameAnimated(f),
       window: null,
+      layoutWindow: null,
       assetVersion: asset.version,
     };
     this.rebuildLayerEffects(rt, f);
@@ -750,16 +785,9 @@ export class StudioEngine {
       rt.surface!.resize([w, h]);
       rt.presentDirty = true;
     }
+    if (rt.layoutWindow) return rt.layoutWindow;
     if (!rt.host) return FULL_WINDOW;
-    const hostRect = rt.host.getBoundingClientRect();
-    if (hostRect.width < 1 || hostRect.height < 1) return FULL_WINDOW;
-    const canvasRect = canvas.getBoundingClientRect();
-    return [
-      (canvasRect.left - hostRect.left) / hostRect.width,
-      (canvasRect.top - hostRect.top) / hostRect.height,
-      canvasRect.width / hostRect.width,
-      canvasRect.height / hostRect.height,
-    ];
+    return windowFromOffsets(canvas, rt.host) ?? FULL_WINDOW;
   }
 }
 
