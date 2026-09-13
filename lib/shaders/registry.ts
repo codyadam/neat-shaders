@@ -97,6 +97,11 @@ export interface ShaderDefinition {
   passes?: ShaderPass[];
   /** Upload a glyph atlas as `atlas` / `atlas_samp` from the charset string param. */
   usesAtlas?: boolean;
+  /**
+   * Sample the layer's Blend mask as interval barriers (pixel sort).
+   * Engine fills `has_mask`, `mask_invert`, `mask_contrast` and binds `mask`.
+   */
+  usesLayerMask?: boolean;
   params: ParamDef[];
 }
 
