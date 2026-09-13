@@ -190,6 +190,8 @@ function LayerSection({ frame, layer }: { frame: Frame; layer: ShaderLayer }) {
   const { openPicker, busy } = useImportFiles();
   const charsetPreset = Number(layer.params.charset_preset ?? 0);
   const colorMapPreset = Number(layer.params.preset ?? 0);
+  const pixelSortInterval = Number(layer.params.interval ?? 0);
+  const isPixelSort = layer.shaderId.startsWith("pixel-sort");
 
   return (
     <Section
@@ -243,6 +245,12 @@ function LayerSection({ frame, layer }: { frame: Frame; layer: ShaderLayer }) {
           if (p.key === "charset" && charsetPreset !== 4) return null;
           if (shader.id === "color-map" && isColorMapStopKey(p.key) && colorMapPreset !== COLOR_MAP_CUSTOM_PRESET) {
             return null;
+          }
+          if (isPixelSort) {
+            if (p.key === "length" && pixelSortInterval < 2) return null;
+            if (p.key === "upper" && pixelSortInterval !== 0) return null;
+            if (p.key === "lower" && pixelSortInterval > 1) return null;
+            if (p.key === "invert_interval" && pixelSortInterval > 1) return null;
           }
           return (
             <ParamControl

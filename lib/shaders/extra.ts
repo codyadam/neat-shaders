@@ -1,4 +1,4 @@
-import type { ShaderDefinition } from "./registry";
+import type { ParamDef, ShaderDefinition } from "./registry";
 import { COLOR_MAP_PRESETS, COLOR_MAP_STOP_PARAMS } from "./color-map";
 import asciiSource from "./wgsl/ascii.wgsl";
 import bloomCompositeSource from "./wgsl/bloom-composite.wgsl";
@@ -16,6 +16,7 @@ import kuwaharaAnisoTensorSource from "./wgsl/kuwahara-aniso-tensor.wgsl";
 import kuwaharaClassicSource from "./wgsl/kuwahara-classic.wgsl";
 import kuwaharaPapariSource from "./wgsl/kuwahara-papari.wgsl";
 import opacitySource from "./wgsl/opacity.wgsl";
+import pixelSortSource from "./wgsl/pixel-sort.wgsl";
 import saturationSource from "./wgsl/saturation.wgsl";
 import snnSource from "./wgsl/snn.wgsl";
 import tintSource from "./wgsl/tint.wgsl";
@@ -53,6 +54,119 @@ const radiusInt = (max: number, def: number, description: string) =>
     default: def,
     description,
   });
+
+const PIXEL_SORT_INTERVALS = [
+  { value: 0, label: "Threshold" },
+  { value: 1, label: "Edges" },
+  { value: 2, label: "Random" },
+  { value: 3, label: "Waves" },
+];
+
+const PIXEL_SORT_KEYS = [
+  { value: 0, label: "Luminance" },
+  { value: 1, label: "Lightness" },
+  { value: 2, label: "Hue" },
+  { value: 3, label: "Saturation" },
+  { value: 4, label: "Intensity" },
+  { value: 5, label: "Minimum" },
+  { value: 6, label: "Maximum" },
+  { value: 7, label: "Red" },
+  { value: 8, label: "Green" },
+  { value: 9, label: "Blue" },
+];
+
+function pixelSortParams(includeAxis: boolean): ParamDef[] {
+  const axis: ParamDef[] = includeAxis
+    ? [
+        {
+          type: "select",
+          key: "axis",
+          label: "Axis",
+          options: [
+            { value: 0, label: "Horizontal" },
+            { value: 1, label: "Vertical" },
+          ],
+          default: 0,
+          description: "Sort along rows (horizontal streaks) or columns (vertical streaks).",
+        },
+      ]
+    : [];
+  return [
+    ...axis,
+    {
+      type: "select",
+      key: "interval",
+      label: "Mask by",
+      options: PIXEL_SORT_INTERVALS,
+      default: 0,
+      description:
+        "How sortable runs are split. Threshold: luma in range. Edges: Sobel barriers. Random / Waves: run lengths. A Blend mask always splits runs too.",
+    },
+    {
+      type: "select",
+      key: "sort_by",
+      label: "Sort by",
+      options: PIXEL_SORT_KEYS,
+      default: 0,
+    },
+    {
+      type: "int",
+      key: "max_span",
+      label: "Max span",
+      min: 2,
+      max: 64,
+      default: 32,
+      description: "Longest run sorted, in pixels. Longer streaks cost more GPU time.",
+    },
+    { type: "bool", key: "reverse", label: "Reverse", default: true, description: "Bright (or high-key) pixels first." },
+    {
+      type: "bool",
+      key: "invert_interval",
+      label: "Invert mask",
+      default: false,
+      description: "Flip which pixels belong to a sortable run (does not invert the Blend mask).",
+    },
+    {
+      type: "float",
+      key: "lower",
+      label: "Lower",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0.25,
+      description: "Threshold: minimum luma. Edges: Sobel amount that breaks a run.",
+    },
+    {
+      type: "float",
+      key: "upper",
+      label: "Upper",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0.8,
+      description: "Threshold: maximum luma. Pixels outside [Lower, Upper] stay put and split runs.",
+    },
+    {
+      type: "float",
+      key: "length",
+      label: "Length",
+      min: 2,
+      max: 200,
+      step: 1,
+      default: 24,
+      description: "Characteristic run length for Random and Waves, in pixels.",
+    },
+    {
+      type: "float",
+      key: "strength",
+      label: "Strength",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 1,
+    },
+  ];
+}
 
 export const EXTRA_SHADERS: ShaderDefinition[] = [
   {
@@ -208,6 +322,42 @@ export const EXTRA_SHADERS: ShaderDefinition[] = [
         description: "Adds Sobel edges into the brightness used to pick a glyph.",
       },
     ],
+  },
+  {
+    id: "pixel-sort",
+    name: "Pixel sort",
+    group: "Stylized",
+    description:
+      "Asendorf-style interval sort along a row or column. Threshold, edges, random and waves mask which runs get sorted; assign a Blend mask to split intervals further.",
+    source: pixelSortSource,
+    usesLayerMask: true,
+    params: pixelSortParams(true),
+  },
+  {
+    id: "pixel-sort-hv",
+    name: "Pixel sort (HV)",
+    group: "Stylized",
+    description:
+      "Two-pass pixel sort: horizontal, then vertical. Same masked interval modes as Pixel sort.",
+    usesLayerMask: true,
+    passes: [
+      { source: pixelSortSource, constants: { axis: 0 } },
+      { source: pixelSortSource, constants: { axis: 1 } },
+    ],
+    params: pixelSortParams(false),
+  },
+  {
+    id: "pixel-sort-vh",
+    name: "Pixel sort (VH)",
+    group: "Stylized",
+    description:
+      "Two-pass pixel sort: vertical, then horizontal — Kim Asendorf's original order. Same masked interval modes as Pixel sort.",
+    usesLayerMask: true,
+    passes: [
+      { source: pixelSortSource, constants: { axis: 1 } },
+      { source: pixelSortSource, constants: { axis: 0 } },
+    ],
+    params: pixelSortParams(false),
   },
   {
     id: "blur-gaussian",

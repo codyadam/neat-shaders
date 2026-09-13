@@ -583,6 +583,11 @@ export class StudioEngine {
       params.atlas_rows = 1;
       params.char_count = 1;
     }
+    if (shader.usesLayerMask) {
+      params.has_mask = layer.maskAssetId ? 1 : 0;
+      params.mask_invert = layer.maskInvert ? 1 : 0;
+      params.mask_contrast = layer.maskContrast;
+    }
     const set: Record<string, unknown> = {
       params,
       src: asset.texture,
@@ -693,6 +698,10 @@ export class StudioEngine {
           params: this.passParams(shader, layer, passes[i], size, time),
         };
         if (hasBinding(wgsl, "orig")) bag.orig = layerInput;
+        if (shader.usesLayerMask) {
+          const maskRt = layer.maskAssetId ? this.assets.get(layer.maskAssetId) : undefined;
+          bag.mask = maskRt?.texture ?? this.white;
+        }
         if (hasBinding(wgsl, "atlas")) {
           const atlas = this.atlasFor(layer.params);
           bag.atlas = atlas.texture;
@@ -767,6 +776,11 @@ export class StudioEngine {
       values.atlas_cols = atlas.cols;
       values.atlas_rows = atlas.rows;
       values.char_count = atlas.count;
+    }
+    if (shader.usesLayerMask) {
+      values.has_mask = layer.maskAssetId ? 1 : 0;
+      values.mask_invert = layer.maskInvert ? 1 : 0;
+      values.mask_contrast = layer.maskContrast;
     }
     return values;
   }
