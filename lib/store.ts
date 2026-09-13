@@ -50,6 +50,7 @@ interface StudioState {
   applyStack: (frameId: string, drafts: StackClipboardLayer[]) => boolean;
   setLayerShader: (frameId: string, layerId: string, shaderId: string) => void;
   setLayerParam: (frameId: string, layerId: string, key: string, value: ParamValue) => void;
+  setLayerParams: (frameId: string, layerId: string, patch: Record<string, ParamValue>) => void;
   resetLayerParams: (frameId: string, layerId: string) => void;
   updateLayer: (frameId: string, layerId: string, patch: Partial<Omit<ShaderLayer, "id">>) => void;
   removeFrame: (id: string) => void;
@@ -266,6 +267,13 @@ export const useStudio = create<StudioState>((set, get) => ({
     set((s) => ({
       frames: mapFrame(s.frames, frameId, (f) =>
         mapLayer(f, layerId, (l) => ({ ...l, params: { ...l.params, [key]: value } })),
+      ),
+    })),
+
+  setLayerParams: (frameId, layerId, patch) =>
+    set((s) => ({
+      frames: mapFrame(s.frames, frameId, (f) =>
+        mapLayer(f, layerId, (l) => ({ ...l, params: { ...l.params, ...patch } })),
       ),
     })),
 

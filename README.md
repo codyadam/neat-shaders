@@ -18,7 +18,7 @@ Built with Next.js (App Router), React, Tailwind CSS, shadcn/ui and [vgpu](https
   - **Stylized**: Pixelate, Dot grid, Halftone, Lit surface.
   - **ASCII**: brightness-to-glyph ramp with presets or a custom character set, source colour or ink, contrast, invert, coverage, edge emphasis.
   - **Blur**: Gaussian (separable), box, Dual Kawase, motion / directional.
-  - **Color**: Hue, contrast, saturation, grayscale, tint, opacity.
+  - **Color**: Hue, contrast, saturation, grayscale, color map (palette remaps with WeatherNext / thermal / sunset / ember / twilight / mono / custom ramps), tint, opacity.
   - **Atmosphere**: Grain (optional animated), vignette, bloom (extract → blur → composite).
   - **Original**: passthrough.
 - Local persistence: imported files are stored in the browser (IndexedDB) together with the frames, viewport and selection, and restored on the next visit, so closing the tab does not lose progress. Autosave is debounced and flushed when the page is hidden; the header shows the save state, and the trash button in the toolbar clears the workspace (including the saved copy). Older single-shader workspaces are migrated to a one-layer stack.

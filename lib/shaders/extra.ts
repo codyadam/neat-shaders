@@ -1,10 +1,12 @@
 import type { ShaderDefinition } from "./registry";
+import { COLOR_MAP_PRESETS, COLOR_MAP_STOP_PARAMS } from "./color-map";
 import asciiSource from "./wgsl/ascii.wgsl";
 import bloomCompositeSource from "./wgsl/bloom-composite.wgsl";
 import bloomExtractSource from "./wgsl/bloom-extract.wgsl";
 import blurKawaseSource from "./wgsl/blur-kawase.wgsl";
 import blurMotionSource from "./wgsl/blur-motion.wgsl";
 import blurSeparableSource from "./wgsl/blur-separable.wgsl";
+import colorMapSource from "./wgsl/color-map.wgsl";
 import contrastSource from "./wgsl/contrast.wgsl";
 import grainSource from "./wgsl/grain.wgsl";
 import grayscaleSource from "./wgsl/grayscale.wgsl";
@@ -383,6 +385,99 @@ export const EXTRA_SHADERS: ShaderDefinition[] = [
         step: 0.01,
         default: 1,
       },
+    ],
+  },
+  {
+    id: "color-map",
+    name: "Color map",
+    group: "Color",
+    description:
+      "Remap the image onto a colour palette. WeatherNext 3 sky is the default; pick another preset or build a custom six-stop ramp.",
+    source: colorMapSource,
+    params: [
+      {
+        type: "select",
+        key: "preset",
+        label: "Palette",
+        options: COLOR_MAP_PRESETS.map(({ value, label }) => ({ value, label })),
+        default: 0,
+        description: "Named ramps, or Custom to edit the six colour stops.",
+      },
+      ...COLOR_MAP_STOP_PARAMS,
+      {
+        type: "select",
+        key: "mode",
+        label: "Fit",
+        options: [
+          { value: 0, label: "Gradient" },
+          { value: 1, label: "Nearest" },
+        ],
+        default: 0,
+        description: "Gradient maps brightness along the ramp. Nearest snaps each pixel to the closest palette colour.",
+      },
+      {
+        type: "select",
+        key: "source",
+        label: "Source",
+        options: [
+          { value: 0, label: "Luminance" },
+          { value: 1, label: "Average" },
+          { value: 2, label: "Value" },
+        ],
+        default: 0,
+        description: "What drives the ramp in Gradient mode. Value is the max RGB channel.",
+      },
+      {
+        type: "float",
+        key: "strength",
+        label: "Strength",
+        min: 0,
+        max: 1,
+        step: 0.01,
+        default: 1,
+        description: "Mix back toward the original. 1 is a full palette remap.",
+      },
+      {
+        type: "float",
+        key: "gamma",
+        label: "Gamma",
+        min: 0.2,
+        max: 4,
+        step: 0.01,
+        default: 1,
+        description: "Curve applied to the lookup before sampling the ramp. >1 pushes midtones toward shadows.",
+      },
+      {
+        type: "float",
+        key: "smoothness",
+        label: "Smoothness",
+        min: 0,
+        max: 1,
+        step: 0.01,
+        default: 1,
+        description: "Gradient mode: 0 steps between stops, 1 interpolates. Ignored by Nearest.",
+      },
+      {
+        type: "float",
+        key: "dither",
+        label: "Dither",
+        min: 0,
+        max: 0.25,
+        step: 0.005,
+        default: 0,
+        description: "Ordered dither on the lookup, to break up banding in Gradient mode.",
+      },
+      {
+        type: "float",
+        key: "hue",
+        label: "Hue",
+        min: -180,
+        max: 180,
+        step: 1,
+        default: 0,
+        description: "Rotate the mapped palette around the grey axis, in degrees.",
+      },
+      { type: "bool", key: "invert", label: "Invert", default: false, description: "Flip the Gradient lookup." },
     ],
   },
   {
