@@ -18,8 +18,14 @@ import { copyFrameStack, pasteFrameStack } from "@/components/studio/stack-clipb
 import { useImportFiles } from "@/components/studio/use-import";
 import { formatBytes, formatDuration } from "@/lib/gpu/export";
 import { getVideo } from "@/lib/gpu/media";
+import {
+  COLOR_MAP_CUSTOM_PRESET,
+  COLOR_MAP_STOP_KEYS,
+  colorMapStopsFromPreset,
+  isColorMapStopKey,
+} from "@/lib/shaders/color-map";
 import { MAX_LAYERS } from "@/lib/shaders/layers";
-import { SHADERS, getShader } from "@/lib/shaders/registry";
+import { SHADERS, getShader, type ParamValue } from "@/lib/shaders/registry";
 import { selectSelectedFrame, selectSelectedLayer, useStudio } from "@/lib/store";
 import type { Asset, Frame, ShaderLayer } from "@/lib/types";
 import { truncateName } from "@/lib/utils";
@@ -179,9 +185,11 @@ function FrameInspector({ frame }: { frame: Frame }) {
 function LayerSection({ frame, layer }: { frame: Frame; layer: ShaderLayer }) {
   const shader = getShader(layer.shaderId);
   const assets = useStudio((s) => s.assets);
-  const { setLayerShader, setLayerParam, resetLayerParams, updateLayer, addLayer } = useStudio.getState();
+  const { setLayerShader, setLayerParam, setLayerParams, resetLayerParams, updateLayer, addLayer } =
+    useStudio.getState();
   const { openPicker, busy } = useImportFiles();
   const charsetPreset = Number(layer.params.charset_preset ?? 0);
+  const colorMapPreset = Number(layer.params.preset ?? 0);
 
   return (
     <Section
@@ -233,12 +241,30 @@ function LayerSection({ frame, layer }: { frame: Frame; layer: ShaderLayer }) {
       <div className="space-y-4 pt-1">
         {shader.params.map((p) => {
           if (p.key === "charset" && charsetPreset !== 4) return null;
+          if (shader.id === "color-map" && isColorMapStopKey(p.key) && colorMapPreset !== COLOR_MAP_CUSTOM_PRESET) {
+            return null;
+          }
           return (
             <ParamControl
               key={p.key}
               def={p}
               value={layer.params[p.key] ?? p.default}
-              onChange={(v) => setLayerParam(frame.id, layer.id, p.key, v)}
+              onChange={(v) => {
+                if (shader.id === "color-map" && p.key === "preset") {
+                  const next = Number(v);
+                  const patch: Record<string, ParamValue> = { preset: next };
+                  if (next === COLOR_MAP_CUSTOM_PRESET) {
+                    const stops = colorMapStopsFromPreset(colorMapPreset);
+                    COLOR_MAP_STOP_KEYS.forEach((key, i) => {
+                      const [r, g, b] = stops[i];
+                      patch[key] = [r, g, b];
+                    });
+                  }
+                  setLayerParams(frame.id, layer.id, patch);
+                  return;
+                }
+                setLayerParam(frame.id, layer.id, p.key, v);
+              }}
             />
           );
         })}
