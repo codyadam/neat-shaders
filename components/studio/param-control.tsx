@@ -14,6 +14,7 @@ interface ParamControlProps {
   def: ParamDef;
   value: ParamValue;
   onChange: (value: ParamValue) => void;
+  disabled?: boolean;
 }
 
 function decimalsFor(step: number): number {
@@ -50,6 +51,7 @@ export function NumberField({
   className,
   id,
   suffix,
+  disabled,
 }: {
   value: number;
   onChange: (v: number) => void;
@@ -59,6 +61,7 @@ export function NumberField({
   className?: string;
   id?: string;
   suffix?: string;
+  disabled?: boolean;
 }) {
   const decimals = decimalsFor(step ?? 1);
   const format = (v: number) => {
@@ -103,6 +106,7 @@ export function NumberField({
           commit();
         }}
         onKeyDown={(e) => {
+          if (disabled) return;
           if (e.key === "Enter") (e.target as HTMLInputElement).blur();
           if (e.key === "ArrowUp" || e.key === "ArrowDown") {
             e.preventDefault();
@@ -113,6 +117,7 @@ export function NumberField({
             onChange(Number(v.toFixed(6)));
           }
         }}
+        disabled={disabled}
         className={cn("h-7 px-2 font-mono text-xs tabular-nums", suffix && "pr-5")}
       />
       {suffix && (
@@ -128,15 +133,17 @@ function ScalarControl({
   def,
   value,
   onChange,
+  disabled,
 }: {
   def: Extract<ParamDef, { type: "float" | "int" }>;
   value: number;
   onChange: (v: number) => void;
+  disabled?: boolean;
 }) {
   const step = def.type === "int" ? (def.step ?? 1) : def.step;
   const id = `param-${def.key}`;
   return (
-    <div className="space-y-1.5">
+    <div className={cn("space-y-1.5", disabled && "opacity-50")}>
       <div className="flex items-center justify-between gap-2">
         <ParamLabel def={def} htmlFor={id} />
         <NumberField
@@ -147,6 +154,7 @@ function ScalarControl({
           max={def.max}
           step={step}
           className="w-20"
+          disabled={disabled}
         />
       </div>
       <Slider
@@ -154,6 +162,7 @@ function ScalarControl({
         max={def.max}
         step={step}
         value={[value]}
+        disabled={disabled}
         onValueChange={([v]) => onChange(def.type === "int" ? Math.round(v) : v)}
       />
     </div>
@@ -164,20 +173,23 @@ function Vec2Control({
   def,
   value,
   onChange,
+  disabled,
 }: {
   def: Extract<ParamDef, { type: "vec2" }>;
   value: [number, number];
   onChange: (v: [number, number]) => void;
+  disabled?: boolean;
 }) {
   const labels = def.labels ?? ["X", "Y"];
   return (
-    <div className="space-y-1.5">
+    <div className={cn("space-y-1.5", disabled && "opacity-50")}>
       <ParamLabel def={def} />
       <div className="grid grid-cols-2 gap-2">
         {([0, 1] as const).map((i) => (
           <div key={i} className="space-y-1">
             <NumberField
               value={value[i]}
+              disabled={disabled}
               onChange={(v) => {
                 const next: [number, number] = [value[0], value[1]];
                 next[i] = v;
@@ -193,6 +205,7 @@ function Vec2Control({
               max={def.max}
               step={def.step}
               value={[value[i]]}
+              disabled={disabled}
               onValueChange={([v]) => {
                 const next: [number, number] = [value[0], value[1]];
                 next[i] = v;
@@ -219,32 +232,33 @@ function hexToRgb(hex: string): [number, number, number] {
   return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 }
 
-export function ParamControl({ def, value, onChange }: ParamControlProps) {
+export function ParamControl({ def, value, onChange, disabled }: ParamControlProps) {
   switch (def.type) {
     case "float":
     case "int":
-      return <ScalarControl def={def} value={Number(value)} onChange={onChange} />;
+      return <ScalarControl def={def} value={Number(value)} onChange={onChange} disabled={disabled} />;
     case "vec2":
       return (
         <Vec2Control
           def={def}
           value={Array.isArray(value) && value.length === 2 ? value : def.default}
           onChange={onChange}
+          disabled={disabled}
         />
       );
     case "bool":
       return (
-        <div className="flex items-center justify-between">
+        <div className={cn("flex items-center justify-between", disabled && "opacity-50")}>
           <ParamLabel def={def} htmlFor={`param-${def.key}`} />
-          <Switch id={`param-${def.key}`} checked={Boolean(value)} onCheckedChange={onChange} />
+          <Switch id={`param-${def.key}`} checked={Boolean(value)} disabled={disabled} onCheckedChange={onChange} />
         </div>
       );
     case "select": {
       const current = def.options.some((o) => o.value === Number(value)) ? Number(value) : def.default;
       return (
-        <div className="flex items-center justify-between gap-2">
+        <div className={cn("flex items-center justify-between gap-2", disabled && "opacity-50")}>
           <ParamLabel def={def} htmlFor={`param-${def.key}`} />
-          <Select value={String(current)} onValueChange={(v) => onChange(Number(v))}>
+          <Select value={String(current)} disabled={disabled} onValueChange={(v) => onChange(Number(v))}>
             <SelectTrigger id={`param-${def.key}`} size="sm" className="h-7 w-32 text-xs">
               <SelectValue />
             </SelectTrigger>
@@ -261,12 +275,13 @@ export function ParamControl({ def, value, onChange }: ParamControlProps) {
     }
     case "string":
       return (
-        <div className="space-y-1.5">
+        <div className={cn("space-y-1.5", disabled && "opacity-50")}>
           <ParamLabel def={def} htmlFor={`param-${def.key}`} />
           <Input
             id={`param-${def.key}`}
             value={String(value ?? def.default)}
             placeholder={def.placeholder}
+            disabled={disabled}
             onChange={(e) => onChange(e.target.value)}
             className="h-7 font-mono text-xs"
           />
@@ -276,7 +291,7 @@ export function ParamControl({ def, value, onChange }: ParamControlProps) {
       const rgb = Array.isArray(value) && value.length === 3 ? value : def.default;
       const hex = rgbToHex(rgb);
       return (
-        <div className="flex items-center justify-between">
+        <div className={cn("flex items-center justify-between", disabled && "opacity-50")}>
           <ParamLabel def={def} htmlFor={`param-${def.key}`} />
           <div className="flex items-center gap-2">
             <span className="font-mono text-[11px] text-muted-foreground uppercase">{hex}</span>
@@ -284,8 +299,9 @@ export function ParamControl({ def, value, onChange }: ParamControlProps) {
               id={`param-${def.key}`}
               type="color"
               value={hex}
+              disabled={disabled}
               onChange={(e) => onChange(hexToRgb(e.target.value))}
-              className="size-7 cursor-pointer rounded-md border bg-transparent p-0.5"
+              className="size-7 cursor-pointer rounded-md border bg-transparent p-0.5 disabled:cursor-not-allowed"
             />
           </div>
         </div>

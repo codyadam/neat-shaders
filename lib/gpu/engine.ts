@@ -50,6 +50,9 @@ interface AtlasRuntime {
   count: number;
   width: number;
   height: number;
+  cellAspect: number;
+  digitAdvance: number;
+  commaAdvance: number;
 }
 
 interface FrameRuntime {
@@ -582,6 +585,11 @@ export class StudioEngine {
       params.atlas_cols = 1;
       params.atlas_rows = 1;
       params.char_count = 1;
+      if (shader.atlasStyle === "label") {
+        params.atlas_aspect = 1;
+        params.digit_advance = 0.58;
+        params.comma_advance = 0.26;
+      }
     }
     if (shader.usesLayerMask) {
       params.has_mask = layer.maskAssetId ? 1 : 0;
@@ -596,9 +604,9 @@ export class StudioEngine {
     if (hasBinding(wgsl, "orig")) set.orig = asset.texture;
     if (hasBinding(wgsl, "mask")) set.mask = this.white;
     if (hasBinding(wgsl, "atlas")) {
-      const atlas = this.atlasFor(layer.params);
+      const atlas = this.atlasFor(shader, layer.params);
       set.atlas = atlas.texture;
-      set.atlas_samp = this.nearestSampler;
+      set.atlas_samp = this.atlasSampler(shader);
     }
     return effect(this.gpu, wgsl, {
       label: `${shader.id}:${layer.id}:${index}`,
@@ -606,9 +614,16 @@ export class StudioEngine {
     });
   }
 
-  private atlasFor(params: Record<string, ParamValue>): AtlasRuntime {
-    const image = renderCharsetAtlas(params);
-    const key = `${image.count}:${image.cols}:${String(params.charset_preset)}:${String(params.charset ?? "")}`;
+  private atlasSampler(shader: ShaderDefinition): GPUSampler {
+    return shader.atlasStyle === "label" ? this.linearSampler : this.nearestSampler;
+  }
+
+  private atlasFor(shader: ShaderDefinition, params: Record<string, ParamValue>): AtlasRuntime {
+    const image = renderCharsetAtlas(params, {
+      charset: shader.atlasCharset,
+      style: shader.atlasStyle,
+    });
+    const key = `${shader.atlasStyle ?? "ascii"}:${shader.atlasCharset ?? ""}:${image.fontKey}:${image.count}:${image.cols}x${image.rows}:${image.canvas.width}x${image.canvas.height}:${String(params.charset_preset)}:${String(params.charset ?? "")}`;
     const existing = this.atlases.get(key);
     if (existing) return existing;
     const texture = this.gpu.device.createTexture({
@@ -630,6 +645,9 @@ export class StudioEngine {
       count: image.count,
       width: image.canvas.width,
       height: image.canvas.height,
+      cellAspect: image.cellAspect,
+      digitAdvance: image.digitAdvance,
+      commaAdvance: image.commaAdvance,
     };
     this.atlases.set(key, rt);
     return rt;
@@ -703,9 +721,9 @@ export class StudioEngine {
           bag.mask = maskRt?.texture ?? this.white;
         }
         if (hasBinding(wgsl, "atlas")) {
-          const atlas = this.atlasFor(layer.params);
+          const atlas = this.atlasFor(shader, layer.params);
           bag.atlas = atlas.texture;
-          bag.atlas_samp = this.nearestSampler;
+          bag.atlas_samp = this.atlasSampler(shader);
         }
         effects[i].set(bag);
         f.pass(dest, effects[i]);
@@ -761,7 +779,7 @@ export class StudioEngine {
     size: [number, number],
     time: number,
   ): Record<string, number | number[]> {
-    const atlas = shader.usesAtlas ? this.atlasFor(layer.params) : null;
+    const atlas = shader.usesAtlas ? this.atlasFor(shader, layer.params) : null;
     const uniforms = toUniformValues(shader, layer.params);
     const values: Record<string, number | number[]> = {
       resolution: size,
@@ -776,6 +794,11 @@ export class StudioEngine {
       values.atlas_cols = atlas.cols;
       values.atlas_rows = atlas.rows;
       values.char_count = atlas.count;
+      if (shader.atlasStyle === "label") {
+        values.atlas_aspect = atlas.cellAspect;
+        values.digit_advance = atlas.digitAdvance;
+        values.comma_advance = atlas.commaAdvance;
+      }
     }
     if (shader.usesLayerMask) {
       values.has_mask = layer.maskAssetId ? 1 : 0;

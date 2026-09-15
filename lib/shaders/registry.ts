@@ -11,70 +11,63 @@ export type ParamValue = number | boolean | string | [number, number] | [number,
 
 export type ShaderGroup = "Painterly" | "Stylized" | "ASCII" | "Blur" | "Color" | "Atmosphere" | "Utility";
 
+export type ParamEnabledWhen =
+  | string
+  | { key: string; equals?: number | boolean; notEquals?: number | boolean };
+
+type ParamMeta = {
+  key: string;
+  label: string;
+  description?: string;
+  /** Inspector collapsible group. Consecutive params with the same title share a header. */
+  section?: string;
+  /** Disable the control unless the referenced param matches (a string means that bool is on). */
+  enabledWhen?: ParamEnabledWhen | ParamEnabledWhen[];
+};
+
 export type ParamDef =
-  | {
+  | (ParamMeta & {
       type: "float";
-      key: string;
-      label: string;
       min: number;
       max: number;
       step: number;
       default: number;
-      description?: string;
-    }
-  | {
+    })
+  | (ParamMeta & {
       type: "int";
-      key: string;
-      label: string;
       min: number;
       max: number;
       step?: number;
       default: number;
-      description?: string;
-    }
-  | {
+    })
+  | (ParamMeta & {
       type: "vec2";
-      key: string;
-      label: string;
       min: number;
       max: number;
       step: number;
       default: [number, number];
       labels?: [string, string];
-      description?: string;
-    }
-  | {
+    })
+  | (ParamMeta & {
       type: "bool";
-      key: string;
-      label: string;
       default: boolean;
-      description?: string;
-    }
-  | {
+    })
+  | (ParamMeta & {
       type: "color";
-      key: string;
-      label: string;
       default: [number, number, number];
-      description?: string;
-    }
-  | {
+    })
+  | (ParamMeta & {
       /** Enumerated choice, packed as an `i32` holding the selected option's `value`. */
       type: "select";
-      key: string;
-      label: string;
       options: { value: number; label: string }[];
       default: number;
-      description?: string;
-    }
-  | {
+    })
+  | (ParamMeta & {
       /** Free text, not packed into the GPU uniform (used for ASCII character ramps). */
       type: "string";
-      key: string;
-      label: string;
       default: string;
       placeholder?: string;
-      description?: string;
-    };
+    });
 
 /** One draw in a shader that needs more than a single fragment pass (bloom, separable blur, anisotropic Kuwahara). */
 export interface ShaderPass {
@@ -95,8 +88,14 @@ export interface ShaderDefinition {
   source?: ShaderSource;
   /** When set, these run in order; `src` of pass N is the previous pass's output. */
   passes?: ShaderPass[];
-  /** Upload a glyph atlas as `atlas` / `atlas_samp` from the charset string param. */
+  /**
+   * Upload a glyph atlas as `atlas` / `atlas_samp`.
+   * Defaults to the ASCII charset params. `atlasCharset` / `atlasStyle` override that
+   * for shaders that just need a small text atlas (e.g. coordinate labels).
+   */
   usesAtlas?: boolean;
+  atlasCharset?: string;
+  atlasStyle?: "ascii" | "label";
   /**
    * Sample the layer's Blend mask as interval barriers (pixel sort).
    * Engine fills `has_mask`, `mask_invert`, `mask_contrast` and binds `mask`.
@@ -186,7 +185,7 @@ const BUILTIN_SHADERS: ShaderDefinition[] = [
         default: 16,
       },
       { type: "bool", key: "tint_enabled", label: "Tint", default: false },
-      { type: "color", key: "tint", label: "Tint color", default: [1, 0.6, 0.2] },
+      { type: "color", key: "tint", label: "Tint color", default: [1, 0.6, 0.2], enabledWhen: "tint_enabled" },
       {
         type: "float",
         key: "tint_strength",
@@ -195,6 +194,7 @@ const BUILTIN_SHADERS: ShaderDefinition[] = [
         max: 1,
         step: 0.01,
         default: 0.6,
+        enabledWhen: "tint_enabled",
       },
     ],
   },
@@ -346,6 +346,7 @@ const BUILTIN_SHADERS: ShaderDefinition[] = [
         type: "select",
         key: "entrance_order",
         label: "Entrance order",
+        enabledWhen: "entrance_enabled",
         options: [
           { value: 0, label: "Rows" },
           { value: 1, label: "Columns" },
@@ -364,6 +365,7 @@ const BUILTIN_SHADERS: ShaderDefinition[] = [
         step: 0.05,
         default: 3,
         description: "Seconds between the first and the last dot starting to grow.",
+        enabledWhen: "entrance_enabled",
       },
       {
         type: "float",
@@ -374,8 +376,9 @@ const BUILTIN_SHADERS: ShaderDefinition[] = [
         step: 0.01,
         default: 0.35,
         description: "Seconds for one dot to grow to its settled size.",
+        enabledWhen: "entrance_enabled",
       },
-      { type: "bool", key: "loop_enabled", label: "Loop entrance", default: true },
+      { type: "bool", key: "loop_enabled", label: "Loop entrance", default: true, enabledWhen: "entrance_enabled" },
       {
         type: "float",
         key: "loop_hold",
@@ -385,6 +388,7 @@ const BUILTIN_SHADERS: ShaderDefinition[] = [
         step: 0.1,
         default: 8,
         description: "Seconds to stay settled before the entrance replays.",
+        enabledWhen: ["entrance_enabled", "loop_enabled"],
       },
       {
         type: "float",
@@ -406,6 +410,7 @@ const BUILTIN_SHADERS: ShaderDefinition[] = [
         step: 0.05,
         default: 2,
         description: "Seconds before the highlight jumps to another random cell.",
+        enabledWhen: "highlight_enabled",
       },
       {
         type: "float",
@@ -416,6 +421,7 @@ const BUILTIN_SHADERS: ShaderDefinition[] = [
         step: 1,
         default: 50,
         description: "Dots closer than this to the highlighted cell swell.",
+        enabledWhen: "highlight_enabled",
       },
       {
         type: "float",
@@ -426,6 +432,7 @@ const BUILTIN_SHADERS: ShaderDefinition[] = [
         step: 0.05,
         default: 2.2,
         description: "Size multiplier at the centre of the highlight.",
+        enabledWhen: "highlight_enabled",
       },
       {
         type: "float",
@@ -436,6 +443,7 @@ const BUILTIN_SHADERS: ShaderDefinition[] = [
         step: 0.5,
         default: 30,
         description: "How snappily dots swell (exponential rate per second).",
+        enabledWhen: "highlight_enabled",
       },
       {
         type: "float",
@@ -446,6 +454,7 @@ const BUILTIN_SHADERS: ShaderDefinition[] = [
         step: 0.5,
         default: 6,
         description: "How quickly the previous highlight relaxes.",
+        enabledWhen: "highlight_enabled",
       },
       { type: "bool", key: "speck_enabled", label: "Corner speck", default: true },
       {
@@ -454,6 +463,7 @@ const BUILTIN_SHADERS: ShaderDefinition[] = [
         label: "Speck color",
         default: [1, 1, 1],
         description: "Colour of the single top-left dot that keeps its own fill.",
+        enabledWhen: "speck_enabled",
       },
     ],
   },
@@ -562,8 +572,9 @@ const BUILTIN_SHADERS: ShaderDefinition[] = [
         max: 8,
         default: 4,
         description: "Bits kept per RGB channel when sampling colour. Lower = coarser palette.",
+        enabledWhen: "sample_color",
       },
-      { type: "color", key: "tint", label: "Tint", default: [0, 0, 0] },
+      { type: "color", key: "tint", label: "Tint", default: [0, 0, 0], enabledWhen: { key: "sample_color", equals: false } },
       { type: "color", key: "background", label: "Background", default: [1, 1, 1] },
       {
         type: "float",
@@ -832,6 +843,7 @@ const BUILTIN_SHADERS: ShaderDefinition[] = [
         step: 0.1,
         default: 1.6,
         description: "Seconds between rings emitted from the focus.",
+        enabledWhen: "ripples_enabled",
       },
       {
         type: "float",
@@ -841,6 +853,7 @@ const BUILTIN_SHADERS: ShaderDefinition[] = [
         max: 10,
         step: 0.01,
         default: 0.62,
+        enabledWhen: "ripples_enabled",
       },
       {
         type: "float",
@@ -850,6 +863,7 @@ const BUILTIN_SHADERS: ShaderDefinition[] = [
         max: 2,
         step: 0.01,
         default: 0.9,
+        enabledWhen: "ripples_enabled",
       },
       {
         type: "float",
@@ -860,6 +874,7 @@ const BUILTIN_SHADERS: ShaderDefinition[] = [
         step: 0.1,
         default: 2.6,
         description: "Ring travel as a multiple of the falloff radius.",
+        enabledWhen: "ripples_enabled",
       },
       {
         type: "float",
@@ -870,6 +885,7 @@ const BUILTIN_SHADERS: ShaderDefinition[] = [
         step: 0.01,
         default: 0.42,
         description: "Ring thickness as a fraction of the falloff radius.",
+        enabledWhen: "ripples_enabled",
       },
     ],
   },
@@ -923,6 +939,33 @@ export function defaultParams(def: ShaderDefinition): Record<string, ParamValue>
     out[p.key] = Array.isArray(p.default) ? ([...p.default] as ParamValue) : p.default;
   }
   return out;
+}
+
+export function isParamEnabled(def: ParamDef, values: Record<string, ParamValue>): boolean {
+  if (!def.enabledWhen) return true;
+  const rules = Array.isArray(def.enabledWhen) ? def.enabledWhen : [def.enabledWhen];
+  return rules.every((rule) => matchEnabledWhen(rule, values));
+}
+
+function matchEnabledWhen(rule: ParamEnabledWhen, values: Record<string, ParamValue>): boolean {
+  if (typeof rule === "string") return Boolean(values[rule]);
+  const v = values[rule.key];
+  if (rule.equals !== undefined) return v === rule.equals;
+  if (rule.notEquals !== undefined) return v !== rule.notEquals;
+  return Boolean(v);
+}
+
+export function groupParamDefs(params: ParamDef[]): { title: string; params: ParamDef[] }[] {
+  const useSections = params.some((p) => p.section);
+  if (!useSections) return [{ title: "", params }];
+  const groups: { title: string; params: ParamDef[] }[] = [];
+  for (const p of params) {
+    const title = p.section ?? "Parameters";
+    const last = groups.at(-1);
+    if (last && last.title === title) last.params.push(p);
+    else groups.push({ title, params: [p] });
+  }
+  return groups;
 }
 
 /** Converts UI param values into the uniform field values the WGSL struct expects. */
