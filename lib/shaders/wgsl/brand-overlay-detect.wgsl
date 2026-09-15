@@ -70,8 +70,8 @@ fn in_frame(cell: vec2i) -> bool {
   return cell.x >= 0 && cell.y >= 0 && cell.x < cols && cell.y < rows;
 }
 
-fn luma_cell(cell: vec2i) -> f32 {
-  let uv = clamp(cell_center(cell) / params.resolution, vec2f(0.0), vec2f(1.0));
+fn luma_px(px: vec2f) -> f32 {
+  let uv = clamp(px / params.resolution, vec2f(0.0), vec2f(1.0));
   return luma(textureSampleLevel(src, samp, uv, 0.0).rgb);
 }
 
@@ -79,60 +79,49 @@ fn score_cell(cell: vec2i) -> f32 {
   if (!in_frame(cell)) {
     return -1.0;
   }
-  let l = luma_cell(cell);
-  var mn = l;
-  var mx = l;
-  for (var oy = -1; oy <= 1; oy++) {
-    for (var ox = -1; ox <= 1; ox++) {
-      let ncell = cell + vec2i(ox, oy);
-      if (!in_frame(ncell)) {
-        continue;
-      }
-      let n = luma_cell(ncell);
-      mn = min(mn, n);
-      mx = max(mx, n);
-    }
-  }
+  let c = cell_center(cell);
+  let o = block() * 0.32;
+  let l0 = luma_px(c);
+  let l1 = luma_px(c + vec2f(-o, -o));
+  let l2 = luma_px(c + vec2f(o, -o));
+  let l3 = luma_px(c + vec2f(-o, o));
+  let l4 = luma_px(c + vec2f(o, o));
+  let mean = (l0 + l1 + l2 + l3 + l4) * 0.2;
+  let mn = min(l0, min(min(l1, l2), min(l3, l4)));
+  let mx = max(l0, max(max(l1, l2), max(l3, l4)));
   let range = max(mx - mn, 0.0);
   switch (params.detect_mode) {
     case 1: {
-      return clamp(range * 180.0, 0.0, 100.0);
+      return clamp(range * 140.0, 0.0, 100.0);
     }
     case 2: {
-      return clamp(l * 100.0, 0.0, 100.0);
+      return clamp(mean * 100.0, 0.0, 100.0);
     }
     case 3: {
-      return clamp((1.0 - l) * 100.0, 0.0, 100.0);
+      return clamp((1.0 - mean) * 100.0, 0.0, 100.0);
     }
     default: {
-      return clamp(range * 130.0 + abs(l - 0.5) * 50.0, 0.0, 100.0);
+      return clamp(range * 90.0 + abs(mean - 0.5) * 55.0, 0.0, 100.0);
     }
   }
 }
 
-fn exclusion_distance() -> f32 {
+fn min_distance() -> f32 {
+  return max(params.min_distance, 1.0);
+}
+
+fn pack_distance() -> f32 {
   let cap = f32(max(params.max_circles, 1));
   let area = max(params.resolution.x * params.resolution.y, 1.0);
-  let pack_d = sqrt(area / cap);
-  return max(max(params.min_distance, 1.0), pack_d);
+  return sqrt(area / cap);
+}
+
+fn nms_distance() -> f32 {
+  return max(min_distance(), pack_distance());
 }
 
 fn nms_radius() -> i32 {
-  return clamp(i32(ceil(exclusion_distance() / block())), 1, 32);
-}
-
-fn density_keep(cell: vec2i, score: f32) -> bool {
-  let min_d = max(params.min_distance, 1.0);
-  let area = max(params.resolution.x * params.resolution.y, 1.0);
-  let slots = max(area / (min_d * min_d), 1.0);
-  let cap = f32(max(params.max_circles, 1));
-  if (cap >= slots) {
-    return true;
-  }
-  let span = max(100.0 - params.threshold, 1.0);
-  let u = clamp((score - params.threshold) / span, 0.0, 1.0);
-  let rank = (1.0 - u) * 0.82 + cell_hash(cell, 2.3) * 0.18;
-  return rank * slots < cap;
+  return clamp(i32(ceil(nms_distance() / block())), 1, 32);
 }
 
 fn is_selected(cell: vec2i) -> bool {
@@ -144,8 +133,8 @@ fn is_selected(cell: vec2i) -> bool {
     return false;
   }
   let nms = nms_radius();
-  let pri = s + cell_hash(cell, 0.7) * 0.05;
-  let min_d = exclusion_distance();
+  let pri = s + cell_hash(cell, 0.7) * 0.02;
+  let min_d = nms_distance();
   for (var oy = -nms; oy <= nms; oy++) {
     for (var ox = -nms; ox <= nms; ox++) {
       if (ox == 0 && oy == 0) {
@@ -159,13 +148,13 @@ fn is_selected(cell: vec2i) -> bool {
       if (ns < params.threshold) {
         continue;
       }
-      let npri = ns + cell_hash(ncell, 0.7) * 0.05;
+      let npri = ns + cell_hash(ncell, 0.7) * 0.02;
       if (length(cell_center(ncell) - cell_center(cell)) < min_d && npri > pri) {
         return false;
       }
     }
   }
-  return density_keep(cell, s);
+  return true;
 }
 
 fn mark_radius(cell: vec2i, score: f32) -> f32 {

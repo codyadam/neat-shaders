@@ -471,7 +471,7 @@ export const EXTRA_SHADERS: ShaderDefinition[] = [
         max: 300,
         step: 1,
         default: 95,
-        description: "Cap on how many survey marks are kept. Lower keeps only the strongest hits.",
+        description: "Upper bound on how many marks are placed. Uses even spacing across the frame, so 200 on a 1080² image is about 200 hits if the threshold allows.",
       },
       {
         type: "float",
@@ -481,7 +481,7 @@ export const EXTRA_SHADERS: ShaderDefinition[] = [
         max: 100,
         step: 5,
         default: 40,
-        description: "Spacing between mark centres. Prevents clustering.",
+        description: "Minimum gap between mark centres. Lower packs more marks (until Max marks).",
       },
       {
         type: "select",
