@@ -41,6 +41,8 @@ struct Params {
   atlas_rows: i32,
   char_count: i32,
   atlas_aspect: f32,
+  digit_advance: f32,
+  comma_advance: f32,
   ink: vec3f,
 }
 
@@ -142,13 +144,33 @@ fn mark_sdf(p: vec2f, center: vec2f, radius: f32) -> f32 {
 
 const COMMA_IDX: i32 = 10;
 
+fn em_size() -> f32 {
+  return max(params.label_size, 1.0);
+}
+
 fn glyph_em() -> vec2f {
-  let em = max(params.label_size, 1.0);
+  let em = em_size();
   var aspect = params.atlas_aspect;
   if (aspect < 0.05) {
-    aspect = 0.62;
+    aspect = 0.7;
   }
   return vec2f(em * aspect, em);
+}
+
+fn digit_adv() -> f32 {
+  var a = params.digit_advance;
+  if (a < 0.05) {
+    a = 0.58;
+  }
+  return em_size() * a;
+}
+
+fn comma_adv() -> f32 {
+  var a = params.comma_advance;
+  if (a < 0.02) {
+    a = 0.26;
+  }
+  return em_size() * a;
 }
 
 fn atlas_glyph(local: vec2f, idx: i32) -> f32 {
@@ -188,18 +210,18 @@ fn int_cov(p: vec2f, origin: vec2f, value: i32) -> f32 {
       count++;
     }
   }
-  let gw = glyph_em().x;
+  let step_x = digit_adv();
   var acc = 0.0;
   var xoff = 0.0;
   for (var i = count - 1; i >= 0; i--) {
     acc = max(acc, glyph_cov(p, origin + vec2f(xoff, 0.0), digits[i]));
-    xoff += gw;
+    xoff += step_x;
   }
   return acc;
 }
 
 fn int_width(value: i32) -> f32 {
-  let gw = glyph_em().x;
+  let step_x = digit_adv();
   var n = max(value, 0);
   var count = 1;
   n = n / 10;
@@ -210,7 +232,7 @@ fn int_width(value: i32) -> f32 {
     count++;
     n = n / 10;
   }
-  return f32(count) * gw;
+  return f32(count) * step_x;
 }
 
 fn label_cov(p: vec2f, center: vec2f, radius: f32) -> f32 {
@@ -225,7 +247,7 @@ fn label_cov(p: vec2f, center: vec2f, radius: f32) -> f32 {
   var acc = int_cov(p, origin, x);
   let w = int_width(x);
   acc = max(acc, glyph_cov(p, origin + vec2f(w, 0.0), COMMA_IDX));
-  acc = max(acc, int_cov(p, origin + vec2f(w + em.x, 0.0), y));
+  acc = max(acc, int_cov(p, origin + vec2f(w + comma_adv(), 0.0), y));
   return acc;
 }
 

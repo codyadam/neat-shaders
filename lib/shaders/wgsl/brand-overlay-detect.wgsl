@@ -35,6 +35,8 @@ struct Params {
   atlas_rows: i32,
   char_count: i32,
   atlas_aspect: f32,
+  digit_advance: f32,
+  comma_advance: f32,
   ink: vec3f,
 }
 

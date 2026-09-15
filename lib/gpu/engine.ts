@@ -51,6 +51,8 @@ interface AtlasRuntime {
   width: number;
   height: number;
   cellAspect: number;
+  digitAdvance: number;
+  commaAdvance: number;
 }
 
 interface FrameRuntime {
@@ -583,7 +585,11 @@ export class StudioEngine {
       params.atlas_cols = 1;
       params.atlas_rows = 1;
       params.char_count = 1;
-      if (shader.atlasStyle === "label") params.atlas_aspect = 1;
+      if (shader.atlasStyle === "label") {
+        params.atlas_aspect = 1;
+        params.digit_advance = 0.58;
+        params.comma_advance = 0.26;
+      }
     }
     if (shader.usesLayerMask) {
       params.has_mask = layer.maskAssetId ? 1 : 0;
@@ -640,6 +646,8 @@ export class StudioEngine {
       width: image.canvas.width,
       height: image.canvas.height,
       cellAspect: image.cellAspect,
+      digitAdvance: image.digitAdvance,
+      commaAdvance: image.commaAdvance,
     };
     this.atlases.set(key, rt);
     return rt;
@@ -786,7 +794,11 @@ export class StudioEngine {
       values.atlas_cols = atlas.cols;
       values.atlas_rows = atlas.rows;
       values.char_count = atlas.count;
-      if (shader.atlasStyle === "label") values.atlas_aspect = atlas.cellAspect;
+      if (shader.atlasStyle === "label") {
+        values.atlas_aspect = atlas.cellAspect;
+        values.digit_advance = atlas.digitAdvance;
+        values.comma_advance = atlas.commaAdvance;
+      }
     }
     if (shader.usesLayerMask) {
       values.has_mask = layer.maskAssetId ? 1 : 0;

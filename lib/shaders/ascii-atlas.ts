@@ -13,6 +13,10 @@ export interface AtlasImage {
   count: number;
   /** Canvas-pixel width / height of one glyph cell. 1 for the square ASCII grid. */
   cellAspect: number;
+  /** Font advance / em for digits (0–9), used as letter-spacing — not the padded cell. */
+  digitAdvance: number;
+  /** Font advance / em for comma. */
+  commaAdvance: number;
   /** Included in the GPU cache key so a late-loaded webfont replaces the fallback bake. */
   fontKey: string;
 }
@@ -75,25 +79,43 @@ function fontReady(spec: string): boolean {
   }
 }
 
-function measureLabelCell(ctx: CanvasRenderingContext2D, glyphs: string[]): { cellW: number; cellH: number; ascent: number } {
-  let maxW = LABEL_FONT_PX * 0.62;
+function measureLabelCell(ctx: CanvasRenderingContext2D, glyphs: string[]): {
+  cellW: number;
+  cellH: number;
+  ascent: number;
+  padX: number;
+  digitAdvance: number;
+  commaAdvance: number;
+} {
+  let maxInk = LABEL_FONT_PX * 0.62;
   let maxAscent = LABEL_FONT_PX * 0.72;
   let maxDescent = LABEL_FONT_PX * 0.22;
+  let digitSum = 0;
+  let digitN = 0;
+  let commaAdvance = LABEL_FONT_PX * 0.26;
   for (const ch of glyphs) {
     const m = ctx.measureText(ch);
     const left = Number.isFinite(m.actualBoundingBoxLeft) ? m.actualBoundingBoxLeft : 0;
     const right = Number.isFinite(m.actualBoundingBoxRight) ? m.actualBoundingBoxRight : m.width;
-    const inkW = Math.max(m.width, left + right, 1);
-    maxW = Math.max(maxW, inkW);
+    const inkW = Math.max(left + right, 1);
+    maxInk = Math.max(maxInk, inkW, m.width);
     if (Number.isFinite(m.actualBoundingBoxAscent)) maxAscent = Math.max(maxAscent, m.actualBoundingBoxAscent);
     if (Number.isFinite(m.actualBoundingBoxDescent)) maxDescent = Math.max(maxDescent, m.actualBoundingBoxDescent);
+    if (ch >= "0" && ch <= "9") {
+      digitSum += Math.max(m.width, 1);
+      digitN++;
+    }
+    if (ch === ",") commaAdvance = Math.max(m.width, 1);
   }
-  const padX = Math.ceil(LABEL_FONT_PX * 0.08);
-  const padY = Math.ceil(LABEL_FONT_PX * 0.08);
+  const padX = Math.ceil(LABEL_FONT_PX * 0.06);
+  const padY = Math.ceil(LABEL_FONT_PX * 0.06);
   return {
-    cellW: Math.ceil(maxW) + padX * 2,
+    cellW: Math.ceil(maxInk) + padX * 2,
     cellH: Math.ceil(maxAscent + maxDescent) + padY * 2,
     ascent: maxAscent,
+    padX,
+    digitAdvance: (digitN > 0 ? digitSum / digitN : LABEL_FONT_PX * 0.58) / LABEL_FONT_PX,
+    commaAdvance: commaAdvance / LABEL_FONT_PX,
   };
 }
 
@@ -107,9 +129,12 @@ function renderLabelAtlas(glyphs: string[]): AtlasImage {
   const probeCtx = probe.getContext("2d");
   if (!probeCtx) throw new Error("Could not create a label atlas canvas.");
   probeCtx.font = spec;
-  probeCtx.textAlign = "center";
+  probeCtx.textAlign = "left";
   probeCtx.textBaseline = "alphabetic";
-  const { cellW, cellH, ascent } = measureLabelCell(probeCtx as CanvasRenderingContext2D, glyphs);
+  const { cellW, cellH, ascent, padX, digitAdvance, commaAdvance } = measureLabelCell(
+    probeCtx as CanvasRenderingContext2D,
+    glyphs,
+  );
 
   const cols = glyphs.length;
   const rows = 1;
@@ -120,15 +145,15 @@ function renderLabelAtlas(glyphs: string[]): AtlasImage {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = "#fff";
   ctx.font = spec;
-  ctx.textAlign = "center";
+  ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
   if ("letterSpacing" in ctx) (ctx as CanvasRenderingContext2D).letterSpacing = "0px";
   if ("fontKerning" in ctx) (ctx as CanvasRenderingContext2D).fontKerning = "none";
 
-  const padY = Math.ceil(LABEL_FONT_PX * 0.08);
+  const padY = Math.ceil(LABEL_FONT_PX * 0.06);
   const baseline = padY + ascent;
   glyphs.forEach((ch, i) => {
-    ctx.fillText(ch, i * cellW + cellW / 2, baseline);
+    ctx.fillText(ch, i * cellW + padX, baseline);
   });
 
   return {
@@ -137,7 +162,9 @@ function renderLabelAtlas(glyphs: string[]): AtlasImage {
     rows,
     count: glyphs.length,
     cellAspect: cellW / cellH,
-    fontKey,
+    digitAdvance,
+    commaAdvance,
+    fontKey: `${fontKey}:d${digitAdvance.toFixed(3)}:c${commaAdvance.toFixed(3)}`,
   };
 }
 
@@ -166,5 +193,14 @@ export function renderCharsetAtlas(params: Record<string, ParamValue>, options?:
     const y = Math.floor(i / cols) * CELL + CELL / 2;
     ctx.fillText(ch, x, y);
   });
-  return { canvas, cols, rows, count: glyphs.length, cellAspect: 1, fontKey: "ascii" };
+  return {
+    canvas,
+    cols,
+    rows,
+    count: glyphs.length,
+    cellAspect: 1,
+    digitAdvance: 1,
+    commaAdvance: 1,
+    fontKey: "ascii",
+  };
 }
