@@ -361,14 +361,14 @@ fn apply_zones(p: vec2f, src_rgb: vec3f) -> vec3f {
 }
 
 fn zone_stroke_cov(p: vec2f) -> f32 {
-  if (params.zone_stroke == 0u) {
+  if (params.zone_stroke == 0u || params.stroke < 0.001) {
     return 0.0;
   }
   let n = clamp(params.zone_count, 0, MAX_ZONES);
   let half_z = max(params.zone_size, 8.0);
   var acc = 0.0;
   for (var i = 0; i < n; i++) {
-    acc = max(acc, outline_cov(sd_box(p - zone_anchor(i), vec2f(half_z)), max(params.stroke, 0.6)));
+    acc = max(acc, outline_cov(sd_box(p - zone_anchor(i), vec2f(half_z)), params.stroke));
   }
   return acc;
 }
@@ -401,9 +401,11 @@ fn overlay_chain(p: vec2f) -> f32 {
   }
 
   var acc = 0.0;
-  let sw = max(params.stroke, 0.35);
-  for (var i = 0; i < n; i++) {
-    acc = max(acc, outline_cov(length(p - centers[i]) - radii[i], sw));
+  let sw = params.stroke;
+  if (sw > 0.001) {
+    for (var i = 0; i < n; i++) {
+      acc = max(acc, outline_cov(length(p - centers[i]) - radii[i], sw));
+    }
   }
   if (params.intersections == 1u) {
     let ms = max(params.marker_size, 0.5);
@@ -435,14 +437,14 @@ fn overlay_chain(p: vec2f) -> f32 {
 
   let b = block();
   let base_cell = vec2i(floor(p / b));
-  let sw = max(params.stroke, 0.3);
+  let sw = params.stroke;
   let mesh_r = max(params.mesh_marker, 0.0);
   let max_d = max(params.max_distance, 0.0);
-  let lw = max(params.line_weight, 0.15);
+  let lw = params.line_weight;
 
   let mark_reach = max(params.max_radius, mesh_r) + max(params.label_size, 0.0) * 6.0 + sw + 4.0;
   let mark_scan = clamp(i32(ceil(mark_reach / b)), 1, MAX_SCAN);
-  let line_scan = select(0, clamp(i32(ceil(max_d / b)), 0, MAX_SCAN), max_d > 0.5);
+  let line_scan = select(0, clamp(i32(ceil(max_d / b)), 0, MAX_SCAN), max_d > 0.5 && lw > 0.001);
   let scan = max(mark_scan, line_scan);
 
   var overlay = 0.0;
@@ -459,7 +461,9 @@ fn overlay_chain(p: vec2f) -> f32 {
       let c = cell_center(cell);
       let r = hit.g * 128.0;
       if (abs(f32(ox)) <= f32(mark_scan) && abs(f32(oy)) <= f32(mark_scan)) {
-        overlay = max(overlay, outline_cov(mark_sdf(p, c, r), sw));
+        if (sw > 0.001) {
+          overlay = max(overlay, outline_cov(mark_sdf(p, c, r), sw));
+        }
         if (mesh_r > 0.35) {
           overlay = max(overlay, fill_cov(mark_sdf(p, c, mesh_r)));
         }
