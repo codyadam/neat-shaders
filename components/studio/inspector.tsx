@@ -13,7 +13,9 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { NumberField, ParamControl } from "@/components/studio/param-control";
+import { ParamGroup } from "@/components/studio/param-group";
 import { ShaderCombobox } from "@/components/studio/shader-combobox";
+import { ShaderStackList } from "@/components/studio/shader-stack-list";
 import { copyFrameStack, pasteFrameStack } from "@/components/studio/stack-clipboard";
 import { useImportFiles } from "@/components/studio/use-import";
 import { formatBytes, formatDuration } from "@/lib/gpu/export";
@@ -25,10 +27,16 @@ import {
   isColorMapStopKey,
 } from "@/lib/shaders/color-map";
 import { MAX_LAYERS } from "@/lib/shaders/layers";
-import { SHADERS, getShader, type ParamValue } from "@/lib/shaders/registry";
+import {
+  SHADERS,
+  getShader,
+  groupParamDefs,
+  isParamEnabled,
+  type ParamValue,
+} from "@/lib/shaders/registry";
 import { selectSelectedFrame, selectSelectedLayer, useStudio } from "@/lib/store";
 import type { Asset, Frame, ShaderLayer } from "@/lib/types";
-import { truncateName } from "@/lib/utils";
+import { truncateName, cn } from "@/lib/utils";
 
 function Section({
   title,
@@ -111,7 +119,7 @@ function EmptyInspector() {
 function FrameInspector({ frame }: { frame: Frame }) {
   const asset = useStudio((s) => s.assets.find((a) => a.id === frame.assetId));
   const layer = useStudio(selectSelectedLayer);
-  const { addLayer, setExportOpen } = useStudio.getState();
+  const { setExportOpen } = useStudio.getState();
 
   return (
     <ScrollArea className="h-full">
@@ -119,54 +127,7 @@ function FrameInspector({ frame }: { frame: Frame }) {
       <Separator />
       {asset && <MediaSection frame={frame} asset={asset} />}
       <Separator />
-      {layer ? (
-        <LayerSection frame={frame} layer={layer} />
-      ) : (
-        <Section
-          title="Shader stack"
-          action={
-            <div className="flex items-center gap-0.5">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon-xs" onClick={() => void copyFrameStack(frame)}>
-                    <ClipboardCopy />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="left">Copy stack</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon-xs" onClick={() => void pasteFrameStack(frame.id)}>
-                    <ClipboardPaste />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="left">Paste stack</TooltipContent>
-              </Tooltip>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                disabled={frame.layers.length >= MAX_LAYERS}
-                onClick={() => addLayer(frame.id)}
-              >
-                <Plus />
-              </Button>
-            </div>
-          }
-        >
-          <p className="text-[11px] leading-snug text-muted-foreground">
-            Select a shader in the layers panel to edit it. Output of each layer feeds the next. Copy the stack as JSON
-            and paste it onto another frame.
-          </p>
-          <ul className="space-y-1">
-            {frame.layers.map((l, i) => (
-              <li key={l.id} className="text-[11px] text-muted-foreground">
-                {i + 1}. {getShader(l.shaderId).name}
-                {!l.visible ? " (hidden)" : ""}
-              </li>
-            ))}
-          </ul>
-        </Section>
-      )}
+      <ShaderStackSection frame={frame} layer={layer} />
       <Separator />
       <Section title="Export">
         <Button className="w-full" size="sm" onClick={() => setExportOpen(true)}>
@@ -182,20 +143,11 @@ function FrameInspector({ frame }: { frame: Frame }) {
   );
 }
 
-function LayerSection({ frame, layer }: { frame: Frame; layer: ShaderLayer }) {
-  const shader = getShader(layer.shaderId);
-  const assets = useStudio((s) => s.assets);
-  const { setLayerShader, setLayerParam, setLayerParams, resetLayerParams, updateLayer, addLayer } =
-    useStudio.getState();
-  const { openPicker, busy } = useImportFiles();
-  const charsetPreset = Number(layer.params.charset_preset ?? 0);
-  const colorMapPreset = Number(layer.params.preset ?? 0);
-  const pixelSortInterval = Number(layer.params.interval ?? 0);
-  const isPixelSort = layer.shaderId.startsWith("pixel-sort");
-
+function ShaderStackSection({ frame, layer }: { frame: Frame; layer: ShaderLayer | null }) {
+  const { addLayer } = useStudio.getState();
   return (
     <Section
-      title="Shader"
+      title="Shader stack"
       action={
         <div className="flex items-center gap-0.5">
           <Tooltip>
@@ -214,72 +166,103 @@ function LayerSection({ frame, layer }: { frame: Frame; layer: ShaderLayer }) {
             </TooltipTrigger>
             <TooltipContent side="left">Paste stack</TooltipContent>
           </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                disabled={frame.layers.length >= MAX_LAYERS}
-                onClick={() => addLayer(frame.id)}
-              >
-                <Plus />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="left">Add shader</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon-xs" onClick={() => resetLayerParams(frame.id, layer.id)}>
-                <RotateCcw />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="left">Reset parameters</TooltipContent>
-          </Tooltip>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            disabled={frame.layers.length >= MAX_LAYERS}
+            onClick={() => addLayer(frame.id)}
+          >
+            <Plus />
+          </Button>
         </div>
       }
     >
+      <p className="text-[11px] leading-snug text-muted-foreground">
+        Output of each layer feeds the next. Click a layer to edit it, or copy the stack as JSON onto another frame.
+      </p>
+      <ShaderStackList frame={frame} />
+      {layer ? (
+        <LayerEditor frame={frame} layer={layer} />
+      ) : (
+        <p className="text-[11px] leading-snug text-muted-foreground">Select a shader layer to edit its parameters.</p>
+      )}
+    </Section>
+  );
+}
+
+function LayerEditor({ frame, layer }: { frame: Frame; layer: ShaderLayer }) {
+  const shader = getShader(layer.shaderId);
+  const assets = useStudio((s) => s.assets);
+  const { setLayerShader, setLayerParam, setLayerParams, resetLayerParams, updateLayer } = useStudio.getState();
+  const { openPicker, busy } = useImportFiles();
+  const charsetPreset = Number(layer.params.charset_preset ?? 0);
+  const colorMapPreset = Number(layer.params.preset ?? 0);
+  const pixelSortInterval = Number(layer.params.interval ?? 0);
+  const isPixelSort = layer.shaderId.startsWith("pixel-sort");
+  const visibleParams = shader.params.filter((p) => {
+    if (p.key === "charset" && charsetPreset !== 4) return false;
+    if (shader.id === "color-map" && isColorMapStopKey(p.key) && colorMapPreset !== COLOR_MAP_CUSTOM_PRESET) {
+      return false;
+    }
+    if (isPixelSort) {
+      if (p.key === "length" && pixelSortInterval < 2) return false;
+      if (p.key === "upper" && pixelSortInterval !== 0) return false;
+      if (p.key === "lower" && pixelSortInterval > 1) return false;
+      if (p.key === "invert_interval" && pixelSortInterval > 1) return false;
+    }
+    return true;
+  });
+  const paramGroups = groupParamDefs(visibleParams);
+  const maskOn = Boolean(layer.maskAssetId);
+
+  const renderParam = (p: (typeof shader.params)[number]) => (
+    <ParamControl
+      key={p.key}
+      def={p}
+      disabled={!isParamEnabled(p, layer.params)}
+      value={layer.params[p.key] ?? p.default}
+      onChange={(v) => {
+        if (shader.id === "color-map" && p.key === "preset") {
+          const next = Number(v);
+          const patch: Record<string, ParamValue> = { preset: next };
+          if (next === COLOR_MAP_CUSTOM_PRESET) {
+            const stops = colorMapStopsFromPreset(colorMapPreset);
+            COLOR_MAP_STOP_KEYS.forEach((key, i) => {
+              const [r, g, b] = stops[i];
+              patch[key] = [r, g, b];
+            });
+          }
+          setLayerParams(frame.id, layer.id, patch);
+          return;
+        }
+        setLayerParam(frame.id, layer.id, p.key, v);
+      }}
+    />
+  );
+
+  return (
+    <div className="space-y-3 border-t border-border/70 pt-3">
+      <div className="flex h-6 items-center justify-between">
+        <h4 className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">Shader</h4>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon-xs" onClick={() => resetLayerParams(frame.id, layer.id)}>
+              <RotateCcw />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="left">Reset parameters</TooltipContent>
+        </Tooltip>
+      </div>
       <ShaderCombobox value={layer.shaderId} onChange={(id) => setLayerShader(frame.id, layer.id, id)} />
       <p className="text-[11px] leading-snug text-muted-foreground">{shader.description}</p>
-      <div className="space-y-4 pt-1">
-        {shader.params.map((p) => {
-          if (p.key === "charset" && charsetPreset !== 4) return null;
-          if (shader.id === "color-map" && isColorMapStopKey(p.key) && colorMapPreset !== COLOR_MAP_CUSTOM_PRESET) {
-            return null;
-          }
-          if (isPixelSort) {
-            if (p.key === "length" && pixelSortInterval < 2) return null;
-            if (p.key === "upper" && pixelSortInterval !== 0) return null;
-            if (p.key === "lower" && pixelSortInterval > 1) return null;
-            if (p.key === "invert_interval" && pixelSortInterval > 1) return null;
-          }
-          return (
-            <ParamControl
-              key={p.key}
-              def={p}
-              value={layer.params[p.key] ?? p.default}
-              onChange={(v) => {
-                if (shader.id === "color-map" && p.key === "preset") {
-                  const next = Number(v);
-                  const patch: Record<string, ParamValue> = { preset: next };
-                  if (next === COLOR_MAP_CUSTOM_PRESET) {
-                    const stops = colorMapStopsFromPreset(colorMapPreset);
-                    COLOR_MAP_STOP_KEYS.forEach((key, i) => {
-                      const [r, g, b] = stops[i];
-                      patch[key] = [r, g, b];
-                    });
-                  }
-                  setLayerParams(frame.id, layer.id, patch);
-                  return;
-                }
-                setLayerParam(frame.id, layer.id, p.key, v);
-              }}
-            />
-          );
-        })}
-      </div>
-      <Separator />
       <div className="space-y-3 pt-1">
-        <div className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">Blend</div>
+        {paramGroups.map((group) => (
+          <ParamGroup key={group.title || "parameters"} title={group.title}>
+            {group.params.map(renderParam)}
+          </ParamGroup>
+        ))}
+      </div>
+      <ParamGroup title="Blend">
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
             <Label className="text-xs text-muted-foreground">Opacity</Label>
@@ -332,7 +315,7 @@ function LayerSection({ frame, layer }: { frame: Frame; layer: ShaderLayer }) {
             Another imported image or video, used as a luma mask. A depth map here gives a depth-of-field look on blur.
           </p>
         </div>
-        <div className="flex items-center justify-between">
+        <div className={cn("flex items-center justify-between", !maskOn && "opacity-50")}>
           <Label className="text-xs text-muted-foreground" htmlFor="mask-invert">
             Invert mask
           </Label>
@@ -340,10 +323,11 @@ function LayerSection({ frame, layer }: { frame: Frame; layer: ShaderLayer }) {
             id="mask-invert"
             size="sm"
             checked={layer.maskInvert}
+            disabled={!maskOn}
             onCheckedChange={(v) => updateLayer(frame.id, layer.id, { maskInvert: v })}
           />
         </div>
-        <div className="space-y-1.5">
+        <div className={cn("space-y-1.5", !maskOn && "opacity-50")}>
           <div className="flex items-center justify-between">
             <Label className="text-xs text-muted-foreground">Feather</Label>
             <span className="font-mono text-[11px] tabular-nums">{layer.maskFeather.toFixed(1)}</span>
@@ -353,10 +337,11 @@ function LayerSection({ frame, layer }: { frame: Frame; layer: ShaderLayer }) {
             max={8}
             step={0.1}
             value={[layer.maskFeather]}
+            disabled={!maskOn}
             onValueChange={([v]) => updateLayer(frame.id, layer.id, { maskFeather: v })}
           />
         </div>
-        <div className="space-y-1.5">
+        <div className={cn("space-y-1.5", !maskOn && "opacity-50")}>
           <div className="flex items-center justify-between">
             <Label className="text-xs text-muted-foreground">Mask contrast</Label>
             <span className="font-mono text-[11px] tabular-nums">{layer.maskContrast.toFixed(2)}</span>
@@ -366,11 +351,12 @@ function LayerSection({ frame, layer }: { frame: Frame; layer: ShaderLayer }) {
             max={4}
             step={0.05}
             value={[layer.maskContrast]}
+            disabled={!maskOn}
             onValueChange={([v]) => updateLayer(frame.id, layer.id, { maskContrast: v })}
           />
         </div>
-      </div>
-    </Section>
+      </ParamGroup>
+    </div>
   );
 }
 

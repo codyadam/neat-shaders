@@ -21,14 +21,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ASSET_DRAG_TYPE } from "@/components/studio/canvas-viewport";
+import { IconButton, ShaderLayerRow } from "@/components/studio/shader-stack-list";
 import { useImportFiles } from "@/components/studio/use-import";
 import { useEngine } from "@/components/studio/engine-context";
 import { formatBytes, formatDuration } from "@/lib/gpu/export";
 import { releaseMedia } from "@/lib/gpu/media";
 import { MAX_LAYERS } from "@/lib/shaders/layers";
-import { getShader } from "@/lib/shaders/registry";
 import { copyFrameStack, pasteFrameStack } from "@/components/studio/stack-clipboard";
 import { useStudio, viewportCenterWorld } from "@/lib/store";
 import type { Asset, Frame } from "@/lib/types";
@@ -210,90 +209,6 @@ function FrameTree({ frame }: { frame: Frame }) {
         </ul>
       )}
     </li>
-  );
-}
-
-function ShaderLayerRow({ frame, layer }: { frame: Frame; layer: import("@/lib/types").ShaderLayer }) {
-  const selected = useStudio((s) => s.selectedId === frame.id && s.selectedLayerId === layer.id);
-  const { selectLayer, updateLayer, removeLayer, duplicateLayer, reorderLayer } = useStudio.getState();
-  const shader = getShader(layer.shaderId);
-
-  return (
-    <li
-      className={cn(
-        "group flex h-7 items-center gap-1 rounded-md px-1.5 text-[11px]",
-        selected ? "bg-(--selection)/15 text-foreground" : "hover:bg-muted/60",
-        !layer.visible && "opacity-50",
-      )}
-      onClick={(e) => {
-        e.stopPropagation();
-        selectLayer(frame.id, layer.id);
-      }}
-    >
-      <SparkleIcon />
-      <span className="min-w-0 flex-1 truncate" title={shader.name}>
-        {shader.name}
-      </span>
-      <div className="hidden items-center group-hover:flex">
-        <IconButton label="Move up" onClick={() => reorderLayer(frame.id, layer.id, "up")}>
-          <ChevronUp />
-        </IconButton>
-        <IconButton label="Move down" onClick={() => reorderLayer(frame.id, layer.id, "down")}>
-          <ChevronDown />
-        </IconButton>
-        <IconButton label="Duplicate" onClick={() => duplicateLayer(frame.id, layer.id)}>
-          <Copy />
-        </IconButton>
-        {frame.layers.length > 1 && (
-          <IconButton label="Delete" onClick={() => removeLayer(frame.id, layer.id)}>
-            <Trash2 />
-          </IconButton>
-        )}
-      </div>
-      <IconButton
-        label={layer.visible ? "Hide" : "Show"}
-        className={cn(layer.visible && "hidden group-hover:inline-flex")}
-        onClick={() => updateLayer(frame.id, layer.id, { visible: !layer.visible })}
-      >
-        {layer.visible ? <Eye /> : <EyeOff />}
-      </IconButton>
-    </li>
-  );
-}
-
-function SparkleIcon() {
-  return <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/70" />;
-}
-
-function IconButton({
-  label,
-  onClick,
-  className,
-  children,
-}: {
-  label: string;
-  onClick: () => void;
-  className?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          className={cn("text-muted-foreground hover:text-foreground", className)}
-          aria-label={label}
-          onClick={(e) => {
-            e.stopPropagation();
-            onClick();
-          }}
-        >
-          {children}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom">{label}</TooltipContent>
-    </Tooltip>
   );
 }
 
