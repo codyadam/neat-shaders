@@ -107,21 +107,25 @@ fn score_cell(cell: vec2i) -> f32 {
 }
 
 fn min_distance() -> f32 {
-  return max(params.min_distance, 1.0);
+  return max(params.min_distance, 0.0);
 }
 
-fn pack_distance() -> f32 {
-  let cap = f32(max(params.max_circles, 1));
-  let area = max(params.resolution.x * params.resolution.y, 1.0);
-  return sqrt(area / cap);
+fn grid_size() -> vec2i {
+  let b = block();
+  return vec2i(
+    max(i32(ceil(params.resolution.x / b)), 1),
+    max(i32(ceil(params.resolution.y / b)), 1),
+  );
 }
 
-fn nms_distance() -> f32 {
-  return max(min_distance(), pack_distance());
-}
-
-fn nms_radius() -> i32 {
-  return clamp(i32(ceil(nms_distance() / block())), 1, 32);
+fn dart_cell(i: i32, attempt: i32) -> vec2i {
+  let g = grid_size();
+  let h1 = hash21(vec2f(f32(i) * 1.7 + f32(attempt) * 9.3, f32(params.size_seed)));
+  let h2 = hash21(vec2f(f32(params.size_seed) + 4.1, f32(i) * 5.9 + f32(attempt) * 2.4));
+  return vec2i(
+    min(i32(h1 * f32(g.x)), g.x - 1),
+    min(i32(h2 * f32(g.y)), g.y - 1),
+  );
 }
 
 fn is_selected(cell: vec2i) -> bool {
@@ -132,29 +136,58 @@ fn is_selected(cell: vec2i) -> bool {
   if (s < params.threshold) {
     return false;
   }
-  let nms = nms_radius();
-  let pri = s + cell_hash(cell, 0.7) * 0.02;
-  let min_d = nms_distance();
-  for (var oy = -nms; oy <= nms; oy++) {
-    for (var ox = -nms; ox <= nms; ox++) {
-      if (ox == 0 && oy == 0) {
+
+  let cap = clamp(params.max_circles, 1, 300);
+  let md = min_distance();
+  let t = params.threshold;
+  let span = max(100.0 - t, 1.0);
+  var placed: array<vec2f, 300>;
+  var n = 0;
+
+  for (var i = 0; i < cap; i++) {
+    var chosen = vec2i(-1, -1);
+    var chosen_px = vec2f(0.0);
+    for (var attempt = 0; attempt < 8; attempt++) {
+      let cand = dart_cell(i, attempt);
+      if (!in_frame(cand)) {
         continue;
       }
-      let ncell = cell + vec2i(ox, oy);
-      if (!in_frame(ncell)) {
+      let cs = score_cell(cand);
+      if (cs < t) {
         continue;
       }
-      let ns = score_cell(ncell);
-      if (ns < params.threshold) {
+      let u = clamp((cs - t) / span, 0.0, 1.0);
+      let accept = hash21(vec2f(f32(i) * 11.0 + f32(attempt), f32(params.size_seed) * 0.13));
+      if (accept > pow(max(u, 0.04), 1.25)) {
         continue;
       }
-      let npri = ns + cell_hash(ncell, 0.7) * 0.02;
-      if (length(cell_center(ncell) - cell_center(cell)) < min_d && npri > pri) {
-        return false;
+      let px = cell_center(cand);
+      if (md > 0.5 && n > 0) {
+        var far = true;
+        for (var j = 0; j < n; j++) {
+          if (distance(px, placed[j]) < md) {
+            far = false;
+            break;
+          }
+        }
+        if (!far) {
+          continue;
+        }
       }
+      chosen = cand;
+      chosen_px = px;
+      break;
     }
+    if (chosen.x < 0) {
+      continue;
+    }
+    if (chosen.x == cell.x && chosen.y == cell.y) {
+      return true;
+    }
+    placed[n] = chosen_px;
+    n++;
   }
-  return true;
+  return false;
 }
 
 fn mark_radius(cell: vec2i, score: f32) -> f32 {

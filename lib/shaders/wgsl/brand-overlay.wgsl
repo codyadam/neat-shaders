@@ -151,7 +151,7 @@ fn atlas_glyph(local: vec2f, idx: i32) -> f32 {
   let i = clamp(idx, 0, n - 1);
   let col = i % cols;
   let row = i / cols;
-  let pad = vec2f(0.1, 0.08);
+  let pad = vec2f(0.18, 0.16);
   let u = mix(pad, vec2f(1.0) - pad, local);
   let atlas_uv = (vec2f(f32(col), f32(row)) + u) / vec2f(f32(cols), f32(rows));
   return textureSampleLevel(atlas, atlas_samp, atlas_uv, 0.0).r;
@@ -178,19 +178,20 @@ fn int_cov(p: vec2f, origin: vec2f, px: f32, value: i32) -> f32 {
       count++;
     }
   }
-  let gw = px * 0.62;
-  let gh = px * 1.15;
+  let em = max(px, 1.0);
+  let gw = em * 0.72;
+  let gh = em * 0.72;
   var acc = 0.0;
   var xoff = 0.0;
   for (var i = count - 1; i >= 0; i--) {
     acc = max(acc, glyph_cov(p, origin + vec2f(xoff, 0.0), vec2f(gw, gh), digits[i]));
-    xoff += gw * 0.88;
+    xoff += em * 0.56;
   }
   return acc;
 }
 
 fn int_width(value: i32, px: f32) -> f32 {
-  let gw = px * 0.62 * 0.88;
+  let gw = px * 0.56;
   var n = max(value, 0);
   var count = 1;
   n = n / 10;
@@ -214,9 +215,9 @@ fn label_cov(p: vec2f, center: vec2f, radius: f32) -> f32 {
   let y = i32(center.y);
   var acc = int_cov(p, origin, px, x);
   let w = int_width(x, px);
-  let comma_w = px * 0.42;
-  acc = max(acc, glyph_cov(p, origin + vec2f(w, px * 0.12), vec2f(comma_w, px * 1.05), COMMA_IDX));
-  acc = max(acc, int_cov(p, origin + vec2f(w + comma_w * 0.72, 0.0), px, y));
+  let comma_w = px * 0.4;
+  acc = max(acc, glyph_cov(p, origin + vec2f(w, 0.0), vec2f(comma_w, px * 0.72), COMMA_IDX));
+  acc = max(acc, int_cov(p, origin + vec2f(w + comma_w * 0.85, 0.0), px, y));
   return acc;
 }
 

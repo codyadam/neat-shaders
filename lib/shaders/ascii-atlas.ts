@@ -48,20 +48,23 @@ export function renderCharsetAtlas(params: Record<string, ParamValue>, options?:
   ctx.textAlign = "center";
   const label = options?.style === "label";
   if (label) {
-    ctx.textBaseline = "alphabetic";
-    ctx.font = `400 ${CELL * 0.72}px ui-sans-serif, system-ui, "Segoe UI", Helvetica, Arial, sans-serif`;
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "center";
+    let family = "Geist, ui-sans-serif, system-ui, sans-serif";
+    if (typeof document !== "undefined") {
+      const root = getComputedStyle(document.documentElement);
+      const geist = root.getPropertyValue("--font-geist-sans").trim();
+      if (geist) family = `${geist}, Geist, ui-sans-serif, sans-serif`;
+    }
+    ctx.font = `450 ${CELL * 0.52}px ${family}`;
   } else {
     ctx.textBaseline = "middle";
     ctx.font = `600 ${CELL * 0.72}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
   }
   glyphs.forEach((ch, i) => {
     const x = (i % cols) * CELL + CELL / 2;
-    const y = Math.floor(i / cols) * CELL;
-    if (label) {
-      ctx.fillText(ch, x, y + CELL * 0.72);
-    } else {
-      ctx.fillText(ch, x, y + CELL / 2);
-    }
+    const y = Math.floor(i / cols) * CELL + CELL / 2;
+    ctx.fillText(ch, x, y);
   });
   return { canvas, cols, rows, count: glyphs.length };
 }
