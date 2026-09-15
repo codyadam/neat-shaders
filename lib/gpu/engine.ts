@@ -50,6 +50,7 @@ interface AtlasRuntime {
   count: number;
   width: number;
   height: number;
+  cellAspect: number;
 }
 
 interface FrameRuntime {
@@ -582,6 +583,7 @@ export class StudioEngine {
       params.atlas_cols = 1;
       params.atlas_rows = 1;
       params.char_count = 1;
+      if (shader.atlasStyle === "label") params.atlas_aspect = 1;
     }
     if (shader.usesLayerMask) {
       params.has_mask = layer.maskAssetId ? 1 : 0;
@@ -615,7 +617,7 @@ export class StudioEngine {
       charset: shader.atlasCharset,
       style: shader.atlasStyle,
     });
-    const key = `${shader.atlasStyle ?? "ascii"}:${shader.atlasCharset ?? ""}:${image.count}:${image.cols}:${String(params.charset_preset)}:${String(params.charset ?? "")}`;
+    const key = `${shader.atlasStyle ?? "ascii"}:${shader.atlasCharset ?? ""}:${image.fontKey}:${image.count}:${image.cols}x${image.rows}:${image.canvas.width}x${image.canvas.height}:${String(params.charset_preset)}:${String(params.charset ?? "")}`;
     const existing = this.atlases.get(key);
     if (existing) return existing;
     const texture = this.gpu.device.createTexture({
@@ -637,6 +639,7 @@ export class StudioEngine {
       count: image.count,
       width: image.canvas.width,
       height: image.canvas.height,
+      cellAspect: image.cellAspect,
     };
     this.atlases.set(key, rt);
     return rt;
@@ -783,6 +786,7 @@ export class StudioEngine {
       values.atlas_cols = atlas.cols;
       values.atlas_rows = atlas.rows;
       values.char_count = atlas.count;
+      if (shader.atlasStyle === "label") values.atlas_aspect = atlas.cellAspect;
     }
     if (shader.usesLayerMask) {
       values.has_mask = layer.maskAssetId ? 1 : 0;

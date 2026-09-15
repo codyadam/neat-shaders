@@ -540,7 +540,7 @@ export const EXTRA_SHADERS: ShaderDefinition[] = [
         max: 30,
         step: 1,
         default: 8,
-        description: "Font size of x,y coordinate labels (real type, not a bitmap). 0 hides them.",
+        description: "Font size of x,y coordinate labels in Geist. 0 hides them.",
       },
       {
         type: "float",

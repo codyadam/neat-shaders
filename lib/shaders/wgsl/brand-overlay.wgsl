@@ -40,6 +40,7 @@ struct Params {
   atlas_cols: i32,
   atlas_rows: i32,
   char_count: i32,
+  atlas_aspect: f32,
   ink: vec3f,
 }
 
@@ -141,6 +142,15 @@ fn mark_sdf(p: vec2f, center: vec2f, radius: f32) -> f32 {
 
 const COMMA_IDX: i32 = 10;
 
+fn glyph_em() -> vec2f {
+  let em = max(params.label_size, 1.0);
+  var aspect = params.atlas_aspect;
+  if (aspect < 0.05) {
+    aspect = 0.62;
+  }
+  return vec2f(em * aspect, em);
+}
+
 fn atlas_glyph(local: vec2f, idx: i32) -> f32 {
   if (local.x <= 0.0 || local.y <= 0.0 || local.x >= 1.0 || local.y >= 1.0) {
     return 0.0;
@@ -151,17 +161,17 @@ fn atlas_glyph(local: vec2f, idx: i32) -> f32 {
   let i = clamp(idx, 0, n - 1);
   let col = i % cols;
   let row = i / cols;
-  let pad = vec2f(0.18, 0.16);
-  let u = mix(pad, vec2f(1.0) - pad, local);
+  let pad = 0.02;
+  let u = mix(vec2f(pad), vec2f(1.0 - pad), local);
   let atlas_uv = (vec2f(f32(col), f32(row)) + u) / vec2f(f32(cols), f32(rows));
   return textureSampleLevel(atlas, atlas_samp, atlas_uv, 0.0).r;
 }
 
-fn glyph_cov(p: vec2f, origin: vec2f, size: vec2f, idx: i32) -> f32 {
-  return atlas_glyph((p - origin) / size, idx);
+fn glyph_cov(p: vec2f, origin: vec2f, idx: i32) -> f32 {
+  return atlas_glyph((p - origin) / glyph_em(), idx);
 }
 
-fn int_cov(p: vec2f, origin: vec2f, px: f32, value: i32) -> f32 {
+fn int_cov(p: vec2f, origin: vec2f, value: i32) -> f32 {
   var digits: array<i32, 4>;
   var n = max(value, 0);
   var count = 0;
@@ -178,20 +188,18 @@ fn int_cov(p: vec2f, origin: vec2f, px: f32, value: i32) -> f32 {
       count++;
     }
   }
-  let em = max(px, 1.0);
-  let gw = em * 0.72;
-  let gh = em * 0.72;
+  let gw = glyph_em().x;
   var acc = 0.0;
   var xoff = 0.0;
   for (var i = count - 1; i >= 0; i--) {
-    acc = max(acc, glyph_cov(p, origin + vec2f(xoff, 0.0), vec2f(gw, gh), digits[i]));
-    xoff += em * 0.56;
+    acc = max(acc, glyph_cov(p, origin + vec2f(xoff, 0.0), digits[i]));
+    xoff += gw;
   }
   return acc;
 }
 
-fn int_width(value: i32, px: f32) -> f32 {
-  let gw = px * 0.56;
+fn int_width(value: i32) -> f32 {
+  let gw = glyph_em().x;
   var n = max(value, 0);
   var count = 1;
   n = n / 10;
@@ -210,14 +218,14 @@ fn label_cov(p: vec2f, center: vec2f, radius: f32) -> f32 {
   if (px < 3.5) {
     return 0.0;
   }
-  let origin = center + vec2f(radius + px * 0.45, -px * 0.55);
+  let em = glyph_em();
+  let origin = center + vec2f(radius + px * 0.4, -em.y * 0.72);
   let x = i32(center.x);
   let y = i32(center.y);
-  var acc = int_cov(p, origin, px, x);
-  let w = int_width(x, px);
-  let comma_w = px * 0.4;
-  acc = max(acc, glyph_cov(p, origin + vec2f(w, 0.0), vec2f(comma_w, px * 0.72), COMMA_IDX));
-  acc = max(acc, int_cov(p, origin + vec2f(w + comma_w * 0.85, 0.0), px, y));
+  var acc = int_cov(p, origin, x);
+  let w = int_width(x);
+  acc = max(acc, glyph_cov(p, origin + vec2f(w, 0.0), COMMA_IDX));
+  acc = max(acc, int_cov(p, origin + vec2f(w + em.x, 0.0), y));
   return acc;
 }
 
