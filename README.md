@@ -15,7 +15,7 @@ Built with Next.js (App Router), React, Tailwind CSS, shadcn/ui and [vgpu](https
 - Inspector: frame geometry, media info, video playback controls (play/pause, loop, scrub), searchable shader combobox and typed parameter controls (float, int, vec2, bool, color, select, string).
 - Shaders (WGSL, driven through vgpu effects). Multipass shaders (bloom, separable blur, anisotropic Kuwahara) run as ping-pong GPU passes.
   - **Painterly**: Kuwahara (8-sector), classic 4-quadrant Kuwahara, Papari (circular sectors + polynomial weights + inverse-variance blend), anisotropic Kuwahara (structure tensor), Tomita–Tsuji, symmetric nearest neighbour.
-  - **Stylized**: Pixelate, Dot grid, Halftone, Lit surface, Brand overlay (survey marks, circle chain, colour-mapped mosaic zones), Pixel sort (threshold / edges / random / waves interval masks; optional Blend mask; horizontal, vertical, HV and VH).
+  - **Stylized**: Pixelate, Dot grid, Halftone, Lit surface, Brand overlay (survey marks, distance mesh with markers, circle chain, colour-mapped mosaic zones), Pixel sort (threshold / edges / random / waves interval masks; optional Blend mask; horizontal, vertical, HV and VH).
   - **ASCII**: brightness-to-glyph ramp with presets or a custom character set, source colour or ink, contrast, invert, coverage, edge emphasis.
   - **Blur**: Gaussian (separable), box, Dual Kawase, motion / directional.
   - **Color**: Hue, contrast, saturation, grayscale, color map (palette remaps with WeatherNext / thermal / sunset / ember / twilight / mono / custom ramps), tint, opacity.

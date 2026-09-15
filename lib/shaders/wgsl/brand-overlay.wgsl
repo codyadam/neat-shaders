@@ -35,6 +35,7 @@ struct Params {
   overlay_opacity: f32,
   max_distance: f32,
   line_weight: f32,
+  mesh_marker: f32,
   map_preset: i32,
   atlas_cols: i32,
   atlas_rows: i32,
@@ -45,15 +46,15 @@ struct Params {
 @group(0) @binding(0) var<uniform> params: Params;
 @group(0) @binding(1) var src: texture_2d<f32>;
 @group(0) @binding(2) var samp: sampler;
-@group(0) @binding(3) var atlas: texture_2d<f32>;
-@group(0) @binding(4) var atlas_samp: sampler;
+@group(0) @binding(3) var orig: texture_2d<f32>;
+@group(0) @binding(4) var atlas: texture_2d<f32>;
+@group(0) @binding(5) var atlas_samp: sampler;
 
-const WIN: i32 = 15;
-const HALF: i32 = 7;
-const WIN_N: i32 = 225;
 const MAX_CHAIN: i32 = 15;
 const MAX_ZONES: i32 = 8;
 const LAST_SPAN: f32 = 5.0;
+const MAX_SCAN: i32 = 22;
+const MAX_PTS: i32 = 48;
 
 fn luma(rgb: vec3f) -> f32 {
   return dot(rgb, vec3f(0.2126, 0.7152, 0.0722));
@@ -69,22 +70,18 @@ fn seed_f() -> f32 {
   return f32(params.size_seed);
 }
 
-fn cell_hash(cell: vec2i, salt: f32) -> f32 {
-  return hash21(vec2f(f32(cell.x) + salt, f32(cell.y) + seed_f() * 0.17));
-}
-
 fn clamp_uv(uv: vec2f) -> vec2f {
   return clamp(uv, vec2f(0.0), vec2f(1.0));
 }
 
 fn sample_luma_px(px: vec2f) -> f32 {
   let uv = clamp_uv((px + 0.5) / params.resolution);
-  return luma(textureSampleLevel(src, samp, uv, 0.0).rgb);
+  return luma(textureSampleLevel(orig, samp, uv, 0.0).rgb);
 }
 
 fn sample_rgb_px(px: vec2f) -> vec3f {
   let uv = clamp_uv((px + 0.5) / params.resolution);
-  return textureSampleLevel(src, samp, uv, 0.0).rgb;
+  return textureSampleLevel(orig, samp, uv, 0.0).rgb;
 }
 
 fn block() -> f32 {
@@ -102,98 +99,16 @@ fn in_frame(cell: vec2i) -> bool {
   return cell.x >= 0 && cell.y >= 0 && cell.x < cols && cell.y < rows;
 }
 
-fn lum_at(lum: ptr<function, array<f32, 225>>, lx: i32, ly: i32) -> f32 {
-  if (lx < 0 || ly < 0 || lx >= WIN || ly >= WIN) {
-    return -1.0;
-  }
-  return (*lum)[ly * WIN + lx];
-}
-
-fn cell_score(lum: ptr<function, array<f32, 225>>, lx: i32, ly: i32) -> f32 {
-  let l = lum_at(lum, lx, ly);
-  if (l < 0.0) {
-    return -1.0;
-  }
-  var mn = l;
-  var mx = l;
-  for (var oy = -1; oy <= 1; oy++) {
-    for (var ox = -1; ox <= 1; ox++) {
-      let n = lum_at(lum, lx + ox, ly + oy);
-      if (n >= 0.0) {
-        mn = min(mn, n);
-        mx = max(mx, n);
-      }
-    }
-  }
-  let range = max(mx - mn, 0.0);
-  switch (params.detect_mode) {
-    case 1: { // Contrast
-      return clamp(range * 180.0, 0.0, 100.0);
-    }
-    case 2: { // Bright
-      return clamp(l * 100.0, 0.0, 100.0);
-    }
-    case 3: { // Dark
-      return clamp((1.0 - l) * 100.0, 0.0, 100.0);
-    }
-    default: { // Combined
-      return clamp(range * 130.0 + abs(l - 0.5) * 50.0, 0.0, 100.0);
-    }
-  }
-}
-
-fn nms_radius() -> i32 {
-  let r = i32(ceil(max(params.min_distance, 1.0) / block()));
-  return clamp(r, 1, HALF);
-}
-
-fn density_keep(cell: vec2i, score: f32) -> bool {
-  let md = max(params.min_distance, 8.0);
-  let slots = max((params.resolution.x * params.resolution.y) / (md * md), 1.0);
-  let cap = f32(max(params.max_circles, 1));
-  let dens = clamp(cap / slots, 0.04, 1.0);
-  let boost = mix(dens, 1.0, clamp((score - params.threshold) / 28.0, 0.0, 1.0));
-  return cell_hash(cell, 2.3) < boost;
-}
-
-fn is_selected(lum: ptr<function, array<f32, 225>>, origin: vec2i, lx: i32, ly: i32) -> bool {
-  let cell = origin + vec2i(lx, ly);
+fn detect_at(cell: vec2i) -> vec4f {
   if (!in_frame(cell)) {
-    return false;
+    return vec4f(0.0);
   }
-  let s = cell_score(lum, lx, ly);
-  if (s < params.threshold) {
-    return false;
-  }
-  let nms = nms_radius();
-  let pri = s + cell_hash(cell, 0.7) * 0.05;
-  for (var oy = -nms; oy <= nms; oy++) {
-    for (var ox = -nms; ox <= nms; ox++) {
-      if (ox == 0 && oy == 0) {
-        continue;
-      }
-      let ncell = cell + vec2i(ox, oy);
-      if (!in_frame(ncell)) {
-        continue;
-      }
-      let ns = cell_score(lum, lx + ox, ly + oy);
-      if (ns < params.threshold) {
-        continue;
-      }
-      let npri = ns + cell_hash(ncell, 0.7) * 0.05;
-      let dist = length(cell_center(ncell) - cell_center(cell));
-      if (dist < max(params.min_distance, 1.0) && npri > pri) {
-        return false;
-      }
-    }
-  }
-  return density_keep(cell, s);
+  let uv = clamp_uv(cell_center(cell) / params.resolution);
+  return textureSampleLevel(src, samp, uv, 0.0);
 }
 
-fn mark_radius(cell: vec2i, score: f32) -> f32 {
-  let t = clamp((score - params.threshold) / max(100.0 - params.threshold, 1.0), 0.0, 1.0);
-  let jitter = mix(0.82, 1.18, cell_hash(cell, 5.1));
-  return mix(max(params.min_radius, 1.0), max(params.max_radius, params.min_radius), t) * jitter;
+fn line_cov(p: vec2f, a: vec2f, b: vec2f, width: f32) -> f32 {
+  return clamp(width * 0.5 + 0.75 - sd_segment(p, a, b), 0.0, 1.0);
 }
 
 fn sd_box(p: vec2f, half_ext: vec2f) -> f32 {
@@ -514,82 +429,60 @@ fn overlay_chain(p: vec2f) -> f32 {
 }
 
 @fragment fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
-  let src_c = textureSampleLevel(src, samp, uv, 0.0);
+  let orig_c = textureSampleLevel(orig, samp, uv, 0.0);
   let p = uv * params.resolution;
-  var rgb = apply_zones(p, src_c.rgb);
+  var rgb = apply_zones(p, orig_c.rgb);
 
   let b = block();
   let base_cell = vec2i(floor(p / b));
-  let origin = base_cell - vec2i(HALF, HALF);
+  let sw = max(params.stroke, 0.3);
+  let mesh_r = max(params.mesh_marker, 0.0);
+  let max_d = max(params.max_distance, 0.0);
+  let lw = max(params.line_weight, 0.15);
 
-  var lum: array<f32, 225>;
-  for (var y = 0; y < WIN; y++) {
-    for (var x = 0; x < WIN; x++) {
-      let cell = origin + vec2i(x, y);
-      if (in_frame(cell)) {
-        lum[y * WIN + x] = sample_luma_px(cell_center(cell));
-      } else {
-        lum[y * WIN + x] = -1.0;
-      }
-    }
-  }
-
-  var sel: array<u32, 225>;
-  var rad: array<f32, 225>;
-  let nms = nms_radius();
-  for (var y = 0; y < WIN; y++) {
-    for (var x = 0; x < WIN; x++) {
-      var chosen = 0u;
-      var r = 0.0;
-      if (x >= nms && y >= nms && x < WIN - nms && y < WIN - nms) {
-        if (is_selected(&lum, origin, x, y)) {
-          chosen = 1u;
-          let cell = origin + vec2i(x, y);
-          r = mark_radius(cell, cell_score(&lum, x, y));
-        }
-      }
-      sel[y * WIN + x] = chosen;
-      rad[y * WIN + x] = r;
-    }
-  }
+  let mark_reach = max(params.max_radius, mesh_r) + max(params.label_size, 0.0) * 6.0 + sw + 4.0;
+  let mark_scan = clamp(i32(ceil(mark_reach / b)), 1, MAX_SCAN);
+  let line_scan = select(0, clamp(i32(ceil(max_d / b)), 0, MAX_SCAN), max_d > 0.5);
+  let scan = max(mark_scan, line_scan);
 
   var overlay = 0.0;
-  let sw = max(params.stroke, 0.3);
-  for (var y = nms; y < WIN - nms; y++) {
-    for (var x = nms; x < WIN - nms; x++) {
-      if (sel[y * WIN + x] == 0u) {
+  var pts: array<vec2f, 48>;
+  var npts = 0;
+
+  for (var oy = -scan; oy <= scan; oy++) {
+    for (var ox = -scan; ox <= scan; ox++) {
+      let cell = base_cell + vec2i(ox, oy);
+      let hit = detect_at(cell);
+      if (hit.r < 0.5) {
         continue;
       }
-      let cell = origin + vec2i(x, y);
       let c = cell_center(cell);
-      let r = rad[y * WIN + x];
-      overlay = max(overlay, outline_cov(mark_sdf(p, c, r), sw));
-      overlay = max(overlay, label_cov(p, c, r));
+      let r = hit.g * 128.0;
+      if (abs(f32(ox)) <= f32(mark_scan) && abs(f32(oy)) <= f32(mark_scan)) {
+        overlay = max(overlay, outline_cov(mark_sdf(p, c, r), sw));
+        if (mesh_r > 0.35) {
+          overlay = max(overlay, fill_cov(mark_sdf(p, c, mesh_r)));
+        }
+        overlay = max(overlay, label_cov(p, c, max(r, mesh_r)));
+      }
+      if (line_scan > 0 && npts < MAX_PTS) {
+        let dpx = distance(c, p);
+        if (dpx <= max_d + lw + 2.0) {
+          pts[npts] = c;
+          npts++;
+        }
+      }
     }
   }
 
-  let max_d = max(params.max_distance, 0.0);
-  if (max_d > 0.5) {
-    let lw = max(params.line_weight, 0.15);
-    for (var i = 0; i < WIN_N; i++) {
-      if (sel[i] == 0u) {
-        continue;
-      }
-      let ix = i % WIN;
-      let iy = i / WIN;
-      let ci = cell_center(origin + vec2i(ix, iy));
-      for (var j = i + 1; j < WIN_N; j++) {
-        if (sel[j] == 0u) {
-          continue;
-        }
-        let jx = j % WIN;
-        let jy = j / WIN;
-        let cj = cell_center(origin + vec2i(jx, jy));
-        let d = distance(ci, cj);
+  if (npts >= 2) {
+    for (var i = 0; i < npts; i++) {
+      for (var j = i + 1; j < npts; j++) {
+        let d = distance(pts[i], pts[j]);
         if (d > max_d || d < 1.0) {
           continue;
         }
-        overlay = max(overlay, outline_cov(sd_segment(p, ci, cj), lw * 2.0));
+        overlay = max(overlay, line_cov(p, pts[i], pts[j], lw));
       }
     }
   }
@@ -599,5 +492,5 @@ fn overlay_chain(p: vec2f) -> f32 {
   overlay *= clamp(params.overlay_opacity, 0.0, 1.0);
 
   rgb = mix(rgb, params.ink, clamp(overlay, 0.0, 1.0));
-  return vec4f(rgb, src_c.a);
+  return vec4f(rgb, orig_c.a);
 }

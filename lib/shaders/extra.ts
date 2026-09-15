@@ -3,6 +3,7 @@ import { COLOR_MAP_PRESETS, COLOR_MAP_STOP_PARAMS } from "./color-map";
 import asciiSource from "./wgsl/ascii.wgsl";
 import bloomCompositeSource from "./wgsl/bloom-composite.wgsl";
 import bloomExtractSource from "./wgsl/bloom-extract.wgsl";
+import brandOverlayDetectSource from "./wgsl/brand-overlay-detect.wgsl";
 import brandOverlaySource from "./wgsl/brand-overlay.wgsl";
 import blurKawaseSource from "./wgsl/blur-kawase.wgsl";
 import blurMotionSource from "./wgsl/blur-motion.wgsl";
@@ -329,11 +330,11 @@ export const EXTRA_SHADERS: ShaderDefinition[] = [
     name: "Brand overlay",
     group: "Stylized",
     description:
-      "Survey-drawing overlay: contrast-aware marks, connecting lines, a shrinking circle chain, and colour-mapped mosaic squares on hashed anchors (WeatherNext by default).",
-    source: brandOverlaySource,
+      "Survey-drawing overlay: contrast-aware marks, a distance mesh with sized markers, a shrinking circle chain, and colour-mapped mosaic squares on hashed anchors (WeatherNext by default).",
     usesAtlas: true,
     atlasStyle: "label",
     atlasCharset: "0123456789,",
+    passes: [{ source: brandOverlayDetectSource }, { source: brandOverlaySource }],
     params: [
       {
         type: "int",
@@ -559,7 +560,7 @@ export const EXTRA_SHADERS: ShaderDefinition[] = [
         max: 400,
         step: 10,
         default: 110,
-        description: "Marks within this range get connected. 0 hides lines.",
+        description: "Connect two markers with a line only when their centres are closer than this. 0 hides the mesh edges.",
       },
       {
         type: "float",
@@ -570,6 +571,16 @@ export const EXTRA_SHADERS: ShaderDefinition[] = [
         step: 0.1,
         default: 0.8,
         description: "Thickness of connecting lines.",
+      },
+      {
+        type: "float",
+        key: "mesh_marker",
+        label: "Mesh marker",
+        min: 0,
+        max: 20,
+        step: 0.5,
+        default: 3.5,
+        description: "Filled marker at each detected point. 0 hides the mesh nodes.",
       },
       { type: "color", key: "ink", label: "Ink", default: [0.93, 0.925, 0.91] },
     ],
