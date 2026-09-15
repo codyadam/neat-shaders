@@ -110,19 +110,29 @@ fn score_cell(cell: vec2i) -> f32 {
   }
 }
 
+fn exclusion_distance() -> f32 {
+  let cap = f32(max(params.max_circles, 1));
+  let area = max(params.resolution.x * params.resolution.y, 1.0);
+  let pack_d = sqrt(area / cap);
+  return max(max(params.min_distance, 1.0), pack_d);
+}
+
 fn nms_radius() -> i32 {
-  let r = i32(ceil(max(params.min_distance, 1.0) / block()));
-  return clamp(r, 1, 24);
+  return clamp(i32(ceil(exclusion_distance() / block())), 1, 32);
 }
 
 fn density_keep(cell: vec2i, score: f32) -> bool {
-  let md = max(params.min_distance, 8.0);
-  let slots = max((params.resolution.x * params.resolution.y) / (md * md), 1.0);
+  let min_d = max(params.min_distance, 1.0);
+  let area = max(params.resolution.x * params.resolution.y, 1.0);
+  let slots = max(area / (min_d * min_d), 1.0);
   let cap = f32(max(params.max_circles, 1));
-  if (cap >= slots || score >= params.threshold + 8.0) {
+  if (cap >= slots) {
     return true;
   }
-  return cell_hash(cell, 2.3) < clamp(cap / slots, 0.2, 1.0);
+  let span = max(100.0 - params.threshold, 1.0);
+  let u = clamp((score - params.threshold) / span, 0.0, 1.0);
+  let rank = (1.0 - u) * 0.82 + cell_hash(cell, 2.3) * 0.18;
+  return rank * slots < cap;
 }
 
 fn is_selected(cell: vec2i) -> bool {
@@ -135,7 +145,7 @@ fn is_selected(cell: vec2i) -> bool {
   }
   let nms = nms_radius();
   let pri = s + cell_hash(cell, 0.7) * 0.05;
-  let min_d = max(params.min_distance, 1.0);
+  let min_d = exclusion_distance();
   for (var oy = -nms; oy <= nms; oy++) {
     for (var ox = -nms; ox <= nms; ox++) {
       if (ox == 0 && oy == 0) {
