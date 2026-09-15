@@ -11,6 +11,11 @@ export interface AtlasImage {
   count: number;
 }
 
+export interface AtlasOptions {
+  charset?: string;
+  style?: "ascii" | "label";
+}
+
 function glyphList(raw: string): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -25,8 +30,8 @@ function glyphList(raw: string): string[] {
 }
 
 /** Renders the character ramp into a square-ish atlas (white glyphs on black). */
-export function renderCharsetAtlas(params: Record<string, ParamValue>): AtlasImage {
-  const glyphs = glyphList(charsetFromParams(params));
+export function renderCharsetAtlas(params: Record<string, ParamValue>, options?: AtlasOptions): AtlasImage {
+  const glyphs = glyphList(options?.charset || charsetFromParams(params));
   const cols = Math.max(1, Math.ceil(Math.sqrt(glyphs.length)));
   const rows = Math.max(1, Math.ceil(glyphs.length / cols));
   const width = cols * CELL;
@@ -41,12 +46,22 @@ export function renderCharsetAtlas(params: Record<string, ParamValue>): AtlasIma
   ctx.fillRect(0, 0, width, height);
   ctx.fillStyle = "#fff";
   ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.font = `600 ${CELL * 0.72}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
+  const label = options?.style === "label";
+  if (label) {
+    ctx.textBaseline = "alphabetic";
+    ctx.font = `400 ${CELL * 0.72}px ui-sans-serif, system-ui, "Segoe UI", Helvetica, Arial, sans-serif`;
+  } else {
+    ctx.textBaseline = "middle";
+    ctx.font = `600 ${CELL * 0.72}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
+  }
   glyphs.forEach((ch, i) => {
     const x = (i % cols) * CELL + CELL / 2;
-    const y = Math.floor(i / cols) * CELL + CELL / 2;
-    ctx.fillText(ch, x, y);
+    const y = Math.floor(i / cols) * CELL;
+    if (label) {
+      ctx.fillText(ch, x, y + CELL * 0.72);
+    } else {
+      ctx.fillText(ch, x, y + CELL / 2);
+    }
   });
   return { canvas, cols, rows, count: glyphs.length };
 }

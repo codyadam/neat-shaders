@@ -95,8 +95,14 @@ export interface ShaderDefinition {
   source?: ShaderSource;
   /** When set, these run in order; `src` of pass N is the previous pass's output. */
   passes?: ShaderPass[];
-  /** Upload a glyph atlas as `atlas` / `atlas_samp` from the charset string param. */
+  /**
+   * Upload a glyph atlas as `atlas` / `atlas_samp`.
+   * Defaults to the ASCII charset params. `atlasCharset` / `atlasStyle` override that
+   * for shaders that just need a small text atlas (e.g. coordinate labels).
+   */
   usesAtlas?: boolean;
+  atlasCharset?: string;
+  atlasStyle?: "ascii" | "label";
   /**
    * Sample the layer's Blend mask as interval barriers (pixel sort).
    * Engine fills `has_mask`, `mask_invert`, `mask_contrast` and binds `mask`.

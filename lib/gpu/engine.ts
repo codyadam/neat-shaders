@@ -596,9 +596,9 @@ export class StudioEngine {
     if (hasBinding(wgsl, "orig")) set.orig = asset.texture;
     if (hasBinding(wgsl, "mask")) set.mask = this.white;
     if (hasBinding(wgsl, "atlas")) {
-      const atlas = this.atlasFor(layer.params);
+      const atlas = this.atlasFor(shader, layer.params);
       set.atlas = atlas.texture;
-      set.atlas_samp = this.nearestSampler;
+      set.atlas_samp = this.atlasSampler(shader);
     }
     return effect(this.gpu, wgsl, {
       label: `${shader.id}:${layer.id}:${index}`,
@@ -606,9 +606,16 @@ export class StudioEngine {
     });
   }
 
-  private atlasFor(params: Record<string, ParamValue>): AtlasRuntime {
-    const image = renderCharsetAtlas(params);
-    const key = `${image.count}:${image.cols}:${String(params.charset_preset)}:${String(params.charset ?? "")}`;
+  private atlasSampler(shader: ShaderDefinition): GPUSampler {
+    return shader.atlasStyle === "label" ? this.linearSampler : this.nearestSampler;
+  }
+
+  private atlasFor(shader: ShaderDefinition, params: Record<string, ParamValue>): AtlasRuntime {
+    const image = renderCharsetAtlas(params, {
+      charset: shader.atlasCharset,
+      style: shader.atlasStyle,
+    });
+    const key = `${shader.atlasStyle ?? "ascii"}:${shader.atlasCharset ?? ""}:${image.count}:${image.cols}:${String(params.charset_preset)}:${String(params.charset ?? "")}`;
     const existing = this.atlases.get(key);
     if (existing) return existing;
     const texture = this.gpu.device.createTexture({
@@ -703,9 +710,9 @@ export class StudioEngine {
           bag.mask = maskRt?.texture ?? this.white;
         }
         if (hasBinding(wgsl, "atlas")) {
-          const atlas = this.atlasFor(layer.params);
+          const atlas = this.atlasFor(shader, layer.params);
           bag.atlas = atlas.texture;
-          bag.atlas_samp = this.nearestSampler;
+          bag.atlas_samp = this.atlasSampler(shader);
         }
         effects[i].set(bag);
         f.pass(dest, effects[i]);
@@ -761,7 +768,7 @@ export class StudioEngine {
     size: [number, number],
     time: number,
   ): Record<string, number | number[]> {
-    const atlas = shader.usesAtlas ? this.atlasFor(layer.params) : null;
+    const atlas = shader.usesAtlas ? this.atlasFor(shader, layer.params) : null;
     const uniforms = toUniformValues(shader, layer.params);
     const values: Record<string, number | number[]> = {
       resolution: size,
