@@ -331,6 +331,9 @@ export const EXTRA_SHADERS: ShaderDefinition[] = [
     description:
       "Survey-drawing overlay: contrast-aware marks, connecting lines, a shrinking circle chain, and colour-mapped mosaic squares on hashed anchors (WeatherNext by default).",
     source: brandOverlaySource,
+    usesAtlas: true,
+    atlasStyle: "label",
+    atlasCharset: "0123456789,",
     params: [
       {
         type: "int",
@@ -536,7 +539,7 @@ export const EXTRA_SHADERS: ShaderDefinition[] = [
         max: 30,
         step: 1,
         default: 8,
-        description: "Pixel font size of x,y coordinate labels. 0 hides them.",
+        description: "Font size of x,y coordinate labels (real type, not a bitmap). 0 hides them.",
       },
       {
         type: "float",
