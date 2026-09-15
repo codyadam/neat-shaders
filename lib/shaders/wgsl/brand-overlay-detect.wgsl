@@ -56,7 +56,7 @@ fn cell_hash(cell: vec2i, salt: f32) -> f32 {
 }
 
 fn block() -> f32 {
-  return max(params.block_size, 8.0);
+  return max(params.block_size, 2.0);
 }
 
 fn cell_center(cell: vec2i) -> vec2f {
@@ -112,7 +112,7 @@ fn score_cell(cell: vec2i) -> f32 {
 
 fn nms_radius() -> i32 {
   let r = i32(ceil(max(params.min_distance, 1.0) / block()));
-  return clamp(r, 1, 8);
+  return clamp(r, 1, 24);
 }
 
 fn density_keep(cell: vec2i, score: f32) -> bool {
@@ -169,7 +169,8 @@ fn mark_radius(cell: vec2i, score: f32) -> f32 {
   let b = block();
   let cell = vec2i(floor(p / b));
   let center = cell_center(cell);
-  if (length(p - center) > 2.25) {
+  let blob = clamp(block() * 0.4, 0.6, 2.25);
+  if (length(p - center) > blob) {
     return vec4f(0.0);
   }
   if (!is_selected(cell)) {

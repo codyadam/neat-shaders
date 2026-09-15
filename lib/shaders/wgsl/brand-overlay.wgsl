@@ -53,7 +53,7 @@ struct Params {
 const MAX_CHAIN: i32 = 15;
 const MAX_ZONES: i32 = 8;
 const LAST_SPAN: f32 = 5.0;
-const MAX_SCAN: i32 = 22;
+const MAX_SCAN: i32 = 48;
 const MAX_PTS: i32 = 48;
 
 fn luma(rgb: vec3f) -> f32 {
@@ -85,7 +85,7 @@ fn sample_rgb_px(px: vec2f) -> vec3f {
 }
 
 fn block() -> f32 {
-  return max(params.block_size, 8.0);
+  return max(params.block_size, 2.0);
 }
 
 fn cell_center(cell: vec2i) -> vec2f {
