@@ -10,6 +10,7 @@ struct Params {
   ink: vec3f,
   background: vec3f,
   coverage: f32,
+  original_opacity: f32,
   edge: f32,
   atlas_cols: i32,
   atlas_rows: i32,
@@ -68,8 +69,11 @@ fn sobel(uv: vec2f) -> f32 {
     l = 1.0 - l;
   }
 
+  let source = textureSampleLevel(src, samp, uv, 0.0);
+  let under = mix(params.background, source.rgb, clamp(params.original_opacity, 0.0, 1.0));
+
   if (l > params.coverage) {
-    return vec4f(params.background, 1.0);
+    return vec4f(under, 1.0);
   }
 
   let n = max(params.char_count, 1);
@@ -85,6 +89,6 @@ fn sobel(uv: vec2f) -> f32 {
   if (params.color_mode == 1) {
     ink = avg;
   }
-  let rgb = mix(params.background, ink, glyph);
+  let rgb = mix(under, ink, glyph);
   return vec4f(rgb, 1.0);
 }

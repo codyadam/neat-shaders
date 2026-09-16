@@ -73,13 +73,15 @@ interface FrameRuntime {
   pingA?: Target;
   pingB?: Target;
   /**
-   * Extra ping so a later pass (or mix) can keep sampling `orig` (the layer input)
+   * Extra pings so a later pass (or mix) can keep sampling `orig` (the layer input)
    * without writing over it. Two-buffer ping-pong aliases dest with `orig` on even
-   * passes — Brand overlay after Tint cleared the previous result to transparent.
+   * passes — Head on display after Tint, and Bloom after any prior layer, cleared
+   * the previous result to transparent (checkerboard on the preview canvas).
    */
   pingC?: Target;
+  pingD?: Target;
   pingSize: [number, number];
-  /** Last stack encode written into ping A/B/C; reused when only the visible window moves. */
+  /** Last stack encode written into ping A–D; reused when only the visible window moves. */
   stackOut?: Target;
   canvas?: HTMLCanvasElement;
   host?: HTMLElement;
@@ -176,6 +178,15 @@ function destroyTarget(t?: Target): void {
   (t as unknown as { destroy?: () => void } | undefined)?.destroy?.();
 }
 
+function makePingTargets(gpu: Gpu, size: [number, number], prefix: string): [Target, Target, Target, Target] {
+  return [
+    target(gpu, { size, format: "rgba8unorm", label: `${prefix}:a` }),
+    target(gpu, { size, format: "rgba8unorm", label: `${prefix}:b` }),
+    target(gpu, { size, format: "rgba8unorm", label: `${prefix}:c` }),
+    target(gpu, { size, format: "rgba8unorm", label: `${prefix}:d` }),
+  ];
+}
+
 function sameWindow(a: UvWindow | null, b: UvWindow): boolean {
   return a !== null && a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3];
 }
@@ -255,9 +266,7 @@ export class StudioEngine {
             f,
             frameDoc,
             rt,
-            rt.pingA!,
-            rt.pingB!,
-            rt.pingC!,
+            [rt.pingA!, rt.pingB!, rt.pingC!, rt.pingD!],
             size,
             this.bypassShaders,
             t,
@@ -410,22 +419,18 @@ export class StudioEngine {
   async renderToBytes(frameId: string, width: number, height: number): Promise<Uint8Array> {
     const size: [number, number] = [Math.max(1, Math.floor(width)), Math.max(1, Math.floor(height))];
     this.uploadVideoFrames();
-    const pingA = target(this.gpu, { size, format: "rgba8unorm", label: "export-a" });
-    const pingB = target(this.gpu, { size, format: "rgba8unorm", label: "export-b" });
-    const pingC = target(this.gpu, { size, format: "rgba8unorm", label: "export-c" });
+    const pings = makePingTargets(this.gpu, size, "export");
     try {
       const frameDoc = this.liveFrame(frameId);
       const rt = this.frames.get(frameId);
       if (!frameDoc || !rt) throw new Error("Frame is not ready on the GPU yet.");
-      let out: Target = pingA;
+      let out: Target = pings[0];
       frame(this.gpu, (f) => {
-        out = this.encodeStack(f, frameDoc, rt, pingA, pingB, pingC, size, false, this.time.time);
+        out = this.encodeStack(f, frameDoc, rt, pings, size, false, this.time.time);
       });
       return await out.read();
     } finally {
-      destroyTarget(pingA);
-      destroyTarget(pingB);
-      destroyTarget(pingC);
+      for (const ping of pings) destroyTarget(ping);
     }
   }
 
@@ -446,12 +451,10 @@ export class StudioEngine {
     if (!frameDoc || !rt) return;
     this.uploadVideoFrames();
     const size = exportSurface.size as [number, number];
-    const pingA = target(this.gpu, { size, format: "rgba8unorm", label: "export-va" });
-    const pingB = target(this.gpu, { size, format: "rgba8unorm", label: "export-vb" });
-    const pingC = target(this.gpu, { size, format: "rgba8unorm", label: "export-vc" });
+    const pings = makePingTargets(this.gpu, size, "export-v");
     try {
       frame(this.gpu, (f) => {
-        const out = this.encodeStack(f, frameDoc, rt, pingA, pingB, pingC, size, false, this.time.time);
+        const out = this.encodeStack(f, frameDoc, rt, pings, size, false, this.time.time);
         this.exportBlit.set({
           src: out.color,
           samp: this.linearSampler,
@@ -460,9 +463,7 @@ export class StudioEngine {
         f.pass(exportSurface, this.exportBlit);
       });
     } finally {
-      destroyTarget(pingA);
-      destroyTarget(pingB);
-      destroyTarget(pingC);
+      for (const ping of pings) destroyTarget(ping);
     }
   }
 
@@ -589,6 +590,7 @@ export class StudioEngine {
     destroyTarget(rt.pingA);
     destroyTarget(rt.pingB);
     destroyTarget(rt.pingC);
+    destroyTarget(rt.pingD);
     rt.stackOut = undefined;
     rt.layerFx.clear();
     rt.mixFx.clear();
@@ -699,13 +701,16 @@ export class StudioEngine {
 
   private ensurePing(rt: FrameRuntime, width: number, height: number): [number, number] {
     const size = cappedSize(Math.max(1, width), Math.max(1, height), this.maxDim);
-    if (!rt.pingA || !rt.pingB || !rt.pingC) {
+    if (!rt.pingA || !rt.pingB || !rt.pingC || !rt.pingD) {
       destroyTarget(rt.pingA);
       destroyTarget(rt.pingB);
       destroyTarget(rt.pingC);
-      rt.pingA = target(this.gpu, { size, format: "rgba8unorm", label: `${rt.frameId}:a` });
-      rt.pingB = target(this.gpu, { size, format: "rgba8unorm", label: `${rt.frameId}:b` });
-      rt.pingC = target(this.gpu, { size, format: "rgba8unorm", label: `${rt.frameId}:c` });
+      destroyTarget(rt.pingD);
+      const [a, b, c, d] = makePingTargets(this.gpu, size, rt.frameId);
+      rt.pingA = a;
+      rt.pingB = b;
+      rt.pingC = c;
+      rt.pingD = d;
       rt.pingSize = size;
       rt.stackOut = undefined;
       return size;
@@ -714,6 +719,7 @@ export class StudioEngine {
       rt.pingA.resize(size);
       rt.pingB.resize(size);
       rt.pingC.resize(size);
+      rt.pingD.resize(size);
       rt.pingSize = size;
       rt.stackOut = undefined;
     }
@@ -724,13 +730,12 @@ export class StudioEngine {
     f: { pass: (dest: Target | Surface, fx: Effect) => void },
     frameDoc: Frame,
     rt: FrameRuntime,
-    pingA: Target,
-    pingB: Target,
-    pingC: Target,
+    pings: Target[],
     size: [number, number],
     bypass: boolean,
     time: number,
   ): Target {
+    const pingA = pings[0];
     const asset = this.assets.get(frameDoc.assetId);
     if (!asset) return pingA;
 
@@ -750,7 +755,7 @@ export class StudioEngine {
 
     /** Next write target that is not `src` (`last`) and not a protected `orig` buffer. */
     const pickDest = (protect: Target | null): Target => {
-      for (const t of [pingA, pingB, pingC]) {
+      for (const t of pings) {
         if (t !== last && t !== protect) return t;
       }
       return pingA;
@@ -767,17 +772,17 @@ export class StudioEngine {
         needsMix(layer) || passes.some((pass) => hasBinding(wgslOf(pass), "orig"));
       // `last` is the ping that holds the previous layer (or null for media). Keep it
       // if a later pass or mix still needs to sample that image as `orig`.
-      const protectOrig = samplesOrig ? last : null;
+      const origTarget = samplesOrig ? last : null;
 
       for (let i = 0; i < passes.length; i++) {
-        const dest = pickDest(protectOrig);
+        const dest = pickDest(origTarget);
         const wgsl = wgslOf(passes[i]);
         const bag: Record<string, unknown> = {
           src: read,
           samp: this.linearSampler,
           params: this.passParams(shader, layer, passes[i], size, time),
         };
-        if (hasBinding(wgsl, "orig")) bag.orig = layerInput;
+        if (hasBinding(wgsl, "orig")) bag.orig = origTarget ?? layerInput;
         if (shader.usesLayerMask) {
           const maskRt = layer.maskAssetId ? this.assets.get(layer.maskAssetId) : undefined;
           bag.mask = maskRt?.texture ?? this.white;
@@ -794,7 +799,7 @@ export class StudioEngine {
       }
 
       if (needsMix(layer)) {
-        const dest = pickDest(protectOrig);
+        const dest = pickDest(origTarget);
         const maskRt = layer.maskAssetId ? this.assets.get(layer.maskAssetId) : undefined;
         let mix = rt.mixFx.get(layer.id);
         if (!mix) {
@@ -803,7 +808,7 @@ export class StudioEngine {
         }
         mix.set({
           src: read,
-          orig: layerInput,
+          orig: origTarget ?? layerInput,
           mask: maskRt?.texture ?? this.white,
           samp: this.linearSampler,
           params: {
