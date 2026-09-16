@@ -5,8 +5,6 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
-  ClipboardCopy,
-  ClipboardPaste,
   Copy,
   Eye,
   EyeOff,
@@ -27,8 +25,6 @@ import { useImportFiles } from "@/components/studio/use-import";
 import { useEngine } from "@/components/studio/engine-context";
 import { formatBytes, formatDuration } from "@/lib/gpu/export";
 import { releaseMedia } from "@/lib/gpu/media";
-import { MAX_LAYERS } from "@/lib/shaders/layers";
-import { copyFrameStack, pasteFrameStack } from "@/components/studio/stack-clipboard";
 import { useStudio, viewportCenterWorld } from "@/lib/store";
 import type { Asset, Frame } from "@/lib/types";
 import { cn, truncateName } from "@/lib/utils";
@@ -81,11 +77,11 @@ function LayersTab() {
 function FrameTree({ frame }: { frame: Frame }) {
   const selected = useStudio((s) => s.selectedId === frame.id && s.selectedLayerId === null);
   const asset = useStudio((s) => s.assets.find((a) => a.id === frame.assetId));
-  const { select, updateFrame, removeFrame, duplicateFrame, reorderFrame, addLayer } = useStudio.getState();
+  const { select, updateFrame, removeFrame, duplicateFrame, reorderFrame } = useStudio.getState();
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(frame.name);
   const layers = React.useMemo(() => [...frame.layers].reverse(), [frame.layers]);
-  const [expanded, setExpanded] = React.useState(true);
+  const [expanded, setExpanded] = React.useState(false);
 
   const commit = () => {
     setEditing(false);
@@ -156,15 +152,6 @@ function FrameTree({ frame }: { frame: Frame }) {
           <IconButton label="Duplicate frame" onClick={() => duplicateFrame(frame.id)}>
             <Copy />
           </IconButton>
-          <IconButton label="Copy stack" onClick={() => void copyFrameStack(frame)}>
-            <ClipboardCopy />
-          </IconButton>
-          <IconButton label="Paste stack" onClick={() => void pasteFrameStack(frame.id)}>
-            <ClipboardPaste />
-          </IconButton>
-          <IconButton label="Add shader" onClick={() => addLayer(frame.id)}>
-            <Plus />
-          </IconButton>
           <IconButton label="Delete" onClick={() => removeFrame(frame.id)}>
             <Trash2 />
           </IconButton>
@@ -189,23 +176,6 @@ function FrameTree({ frame }: { frame: Frame }) {
           {layers.map((layer) => (
             <ShaderLayerRow key={layer.id} frame={frame} layer={layer} />
           ))}
-          <li className="flex items-center gap-0.5">
-            <button
-              type="button"
-              disabled={frame.layers.length >= MAX_LAYERS}
-              onClick={() => addLayer(frame.id)}
-              className="flex h-7 min-w-0 flex-1 items-center gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-muted/60 hover:text-foreground disabled:opacity-40"
-            >
-              <Plus className="size-3" />
-              Add shader
-            </button>
-            <IconButton label="Copy stack" onClick={() => void copyFrameStack(frame)}>
-              <ClipboardCopy />
-            </IconButton>
-            <IconButton label="Paste stack" onClick={() => void pasteFrameStack(frame.id)}>
-              <ClipboardPaste />
-            </IconButton>
-          </li>
         </ul>
       )}
     </li>

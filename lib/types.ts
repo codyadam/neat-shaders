@@ -40,9 +40,10 @@ export interface Frame {
   name: string;
   assetId: string;
   layers: ShaderLayer[];
-  /** World-space position and size (canvas units at zoom 1). */
+  /** World-space position (canvas units at zoom 1). */
   x: number;
   y: number;
+  /** Working resolution in pixels (also the on-canvas size at zoom 1). Shaders run at this size. */
   width: number;
   height: number;
   visible: boolean;

@@ -97,8 +97,8 @@ function ExportForm({
   const [progress, setProgress] = React.useState(0);
   const abortRef = React.useRef<AbortController | null>(null);
 
-  const outW = Math.max(1, Math.round(asset.width * scale));
-  const outH = Math.max(1, Math.round(asset.height * scale));
+  const outW = Math.max(1, Math.round(frame.width * scale));
+  const outH = Math.max(1, Math.round(frame.height * scale));
   const maxDim = engine ? engine.gpu.gpu.limits.maxTextureDimension2D : 8192;
   const tooLarge = Math.max(outW, outH) > maxDim;
   const selectedVideoFormat = videoFormats.find((f) => f.mimeType === videoMime);
@@ -162,7 +162,10 @@ function ExportForm({
           Export “{truncateName(frame.name)}”
         </DialogTitle>
         <DialogDescription>
-          {stackLabel(frame)} · source {asset.width}×{asset.height}
+          {stackLabel(frame)} · {frame.width}×{frame.height}
+          {frame.width !== asset.width || frame.height !== asset.height
+            ? ` · source ${asset.width}×${asset.height}`
+            : ""}
           {isVideo && asset.duration ? ` · ${formatDuration(asset.duration)}` : ""}
         </DialogDescription>
       </DialogHeader>

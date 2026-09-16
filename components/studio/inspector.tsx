@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { ClipboardCopy, ClipboardPaste, Download, Link2, Link2Off, Pause, Play, Plus, Repeat, RotateCcw, Scan, Upload } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,7 +27,6 @@ import {
 } from "@/lib/shaders/color-map";
 import { MAX_LAYERS } from "@/lib/shaders/layers";
 import {
-  SHADERS,
   getShader,
   groupParamDefs,
   isParamEnabled,
@@ -70,24 +68,6 @@ export function Inspector() {
 function EmptyInspector() {
   return (
     <ScrollArea className="h-full">
-      <Section title="Shaders">
-        <ul className="space-y-2">
-          {SHADERS.map((s) => (
-            <li key={s.id} className="rounded-lg border p-2.5">
-              <div className="text-xs font-medium">{s.name}</div>
-              <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{s.description}</p>
-              <div className="mt-1.5 flex flex-wrap gap-1">
-                {s.params.map((p) => (
-                  <Badge key={p.key} variant="outline" className="h-4 px-1 text-[9px] font-normal">
-                    {p.label}
-                  </Badge>
-                ))}
-              </div>
-            </li>
-          ))}
-        </ul>
-      </Section>
-      <Separator />
       <Section title="Shortcuts">
         <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1.5 text-[11px]">
           {[
@@ -96,6 +76,7 @@ function EmptyInspector() {
             ["Select / Hand", "V · H"],
             ["Import", "⌘ I"],
             ["Paste image or stack", "⌘ V"],
+            ["Copy stack", "⌘ C"],
             ["Export", "⌘ E"],
             ["Duplicate", "⌘ D"],
             ["Delete", "⌫"],
@@ -135,7 +116,7 @@ function FrameInspector({ frame }: { frame: Frame }) {
           Export {asset?.kind === "video" ? "video or still" : "image"}
         </Button>
         <p className="text-[11px] leading-snug text-muted-foreground">
-          Renders at the source resolution (or a scale of it), independent of on-canvas zoom. Export always includes the
+          Renders at the frame resolution (or a scale of it), independent of on-canvas zoom. Export always includes the
           shader stack.
         </p>
       </Section>
@@ -156,7 +137,7 @@ function ShaderStackSection({ frame, layer }: { frame: Frame; layer: ShaderLayer
                 <ClipboardCopy />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="left">Copy stack</TooltipContent>
+            <TooltipContent side="left">Copy stack ⌘ C</TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -164,7 +145,7 @@ function ShaderStackSection({ frame, layer }: { frame: Frame; layer: ShaderLayer
                 <ClipboardPaste />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="left">Paste stack</TooltipContent>
+            <TooltipContent side="left">Paste stack ⌘ V</TooltipContent>
           </Tooltip>
           <Button
             variant="ghost"
@@ -429,6 +410,10 @@ function FrameSection({ frame, asset }: { frame: Frame; asset?: Asset }) {
           />
         </Field>
       </div>
+      <p className="text-[11px] leading-snug text-muted-foreground">
+        W and H are the pixel grid the shader stack runs on. Doubling them upsamples the source so
+        effects see four times as many pixels.
+      </p>
       <div className="flex items-center gap-1">
         <Tooltip>
           <TooltipTrigger asChild>
