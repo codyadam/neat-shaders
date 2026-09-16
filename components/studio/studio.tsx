@@ -10,7 +10,7 @@ import { Inspector } from "@/components/studio/inspector";
 import { LeftPanel } from "@/components/studio/left-panel";
 import { Toolbar } from "@/components/studio/toolbar";
 import { filesFromClipboard, useImportFiles } from "@/components/studio/use-import";
-import { applyStackText } from "@/components/studio/stack-clipboard";
+import { applyStackText, copyFrameStack } from "@/components/studio/stack-clipboard";
 import { usePersistence } from "@/components/studio/use-persistence";
 import { looksLikeStack } from "@/lib/shaders/stack-clipboard";
 import { useStudio } from "@/lib/store";
@@ -30,8 +30,21 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
 }
 
+function isModLetter(e: KeyboardEvent, letter: string): boolean {
+  return (
+    (e.metaKey || e.ctrlKey) &&
+    !e.shiftKey &&
+    !e.altKey &&
+    (e.key.toLowerCase() === letter || e.code === `Key${letter.toUpperCase()}`)
+  );
+}
+
 function isPasteShortcut(e: KeyboardEvent): boolean {
-  return (e.metaKey || e.ctrlKey) && (e.key.toLowerCase() === "v" || e.code === "KeyV");
+  return isModLetter(e, "v");
+}
+
+function isCopyShortcut(e: KeyboardEvent): boolean {
+  return isModLetter(e, "c");
 }
 
 /**
@@ -131,6 +144,19 @@ function StudioShell() {
       if (mod && e.key.toLowerCase() === "i") {
         e.preventDefault();
         void openPicker();
+      } else if (isCopyShortcut(e)) {
+        if (e.repeat) {
+          e.preventDefault();
+          return;
+        }
+        const frame = s.selectedId ? s.frames.find((f) => f.id === s.selectedId) : undefined;
+        if (!frame) {
+          toast.error("Select a frame to copy the shader stack");
+          e.preventDefault();
+          return;
+        }
+        e.preventDefault();
+        void copyFrameStack(frame);
       } else if (mod && e.key.toLowerCase() === "e") {
         e.preventDefault();
         if (s.selectedId) s.setExportOpen(true);

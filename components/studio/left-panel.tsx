@@ -156,10 +156,10 @@ function FrameTree({ frame }: { frame: Frame }) {
           <IconButton label="Duplicate frame" onClick={() => duplicateFrame(frame.id)}>
             <Copy />
           </IconButton>
-          <IconButton label="Copy stack" onClick={() => void copyFrameStack(frame)}>
+          <IconButton label="Copy stack ⌘ C" onClick={() => void copyFrameStack(frame)}>
             <ClipboardCopy />
           </IconButton>
-          <IconButton label="Paste stack" onClick={() => void pasteFrameStack(frame.id)}>
+          <IconButton label="Paste stack ⌘ V" onClick={() => void pasteFrameStack(frame.id)}>
             <ClipboardPaste />
           </IconButton>
           <IconButton label="Add shader" onClick={() => addLayer(frame.id)}>
@@ -199,10 +199,10 @@ function FrameTree({ frame }: { frame: Frame }) {
               <Plus className="size-3" />
               Add shader
             </button>
-            <IconButton label="Copy stack" onClick={() => void copyFrameStack(frame)}>
+            <IconButton label="Copy stack ⌘ C" onClick={() => void copyFrameStack(frame)}>
               <ClipboardCopy />
             </IconButton>
-            <IconButton label="Paste stack" onClick={() => void pasteFrameStack(frame.id)}>
+            <IconButton label="Paste stack ⌘ V" onClick={() => void pasteFrameStack(frame.id)}>
               <ClipboardPaste />
             </IconButton>
           </li>

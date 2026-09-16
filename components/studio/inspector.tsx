@@ -96,6 +96,7 @@ function EmptyInspector() {
             ["Select / Hand", "V · H"],
             ["Import", "⌘ I"],
             ["Paste image or stack", "⌘ V"],
+            ["Copy stack", "⌘ C"],
             ["Export", "⌘ E"],
             ["Duplicate", "⌘ D"],
             ["Delete", "⌫"],
@@ -156,7 +157,7 @@ function ShaderStackSection({ frame, layer }: { frame: Frame; layer: ShaderLayer
                 <ClipboardCopy />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="left">Copy stack</TooltipContent>
+            <TooltipContent side="left">Copy stack ⌘ C</TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -164,7 +165,7 @@ function ShaderStackSection({ frame, layer }: { frame: Frame; layer: ShaderLayer
                 <ClipboardPaste />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="left">Paste stack</TooltipContent>
+            <TooltipContent side="left">Paste stack ⌘ V</TooltipContent>
           </Tooltip>
           <Button
             variant="ghost"
