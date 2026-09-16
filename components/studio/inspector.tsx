@@ -136,7 +136,7 @@ function FrameInspector({ frame }: { frame: Frame }) {
           Export {asset?.kind === "video" ? "video or still" : "image"}
         </Button>
         <p className="text-[11px] leading-snug text-muted-foreground">
-          Renders at the source resolution (or a scale of it), independent of on-canvas zoom. Export always includes the
+          Renders at the frame resolution (or a scale of it), independent of on-canvas zoom. Export always includes the
           shader stack.
         </p>
       </Section>
@@ -430,6 +430,10 @@ function FrameSection({ frame, asset }: { frame: Frame; asset?: Asset }) {
           />
         </Field>
       </div>
+      <p className="text-[11px] leading-snug text-muted-foreground">
+        W and H are the pixel grid the shader stack runs on. Doubling them upsamples the source so
+        effects see four times as many pixels.
+      </p>
       <div className="flex items-center gap-1">
         <Tooltip>
           <TooltipTrigger asChild>

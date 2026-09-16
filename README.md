@@ -9,7 +9,7 @@ Built with Next.js (App Router), React, Tailwind CSS, shadcn/ui and [vgpu](https
 - Infinite canvas with pan (Space + drag, wheel, hand tool), zoom (⌘/Ctrl + wheel, pinch, shortcuts), zoom-to-fit and zoom-to-selection.
 - Hold **Space** (or toggle the compare button) to see the original media on the canvas. Export still includes the shader stack. Space also pans, as before.
 - Hide the UI with Shift+G or the eye button in the toolbar to look at the result alone; panning and zooming keep working, and a small pill brings the UI back.
-- Frames: each imported image or video becomes a frame you can select, move, resize (aspect-locked corner handles), rename, reorder, hide and lock. Import by dropping files on the canvas, pasting an image (⌘/Ctrl+V — screenshots and copied bitmaps included), or the Import button (⌘/Ctrl+I).
+- Frames: each imported image or video becomes a frame you can select, move, resize (aspect-locked corner handles), rename, reorder, hide and lock. The frame’s width and height are the working pixel resolution shaders run at (the media is sampled up or down into that grid); on-canvas zoom only changes how large that buffer looks. Import by dropping files on the canvas, pasting an image (⌘/Ctrl+V — screenshots and copied bitmaps included), or the Import button (⌘/Ctrl+I).
 - Shader stack: each frame has an ordered list of shaders (up to 16). The first visible layer reads the media; each next layer reads the previous output. Nested under the frame in the layers panel, like Figma. Copy a stack as JSON with ⌘/Ctrl+C when a frame is selected (or the clipboard button on the frame / stack footer) and paste it onto another frame with ⌘/Ctrl+V. Per layer: mute, opacity, and an optional luma mask from another asset (invert / feather / contrast) — a depth map on a blur layer gives a depth-of-field look.
 - Assets panel: imported media, drag an asset onto the canvas to make another frame from it.
 - Inspector: frame geometry, media info, video playback controls (play/pause, loop, scrub), searchable shader combobox and typed parameter controls (float, int, vec2, bool, color, select, string).
@@ -23,7 +23,7 @@ Built with Next.js (App Router), React, Tailwind CSS, shadcn/ui and [vgpu](https
   - **Original**: passthrough.
 - Local persistence: imported files are stored in the browser (IndexedDB) together with the frames, viewport and selection, and restored on the next visit, so closing the tab does not lose progress. Autosave is debounced and flushed when the page is hidden; the header shows the save state, and the trash button in the toolbar clears the workspace (including the saved copy). Older single-shader workspaces are migrated to a one-layer stack.
 - Export:
-  - Images: PNG, JPEG or WebP, at 0.25×–8× of the source resolution, rendered offscreen and read back from the GPU (independent of on-canvas zoom).
+  - Images: PNG, JPEG or WebP, at 0.25×–8× of the frame resolution, rendered offscreen and read back from the GPU (independent of on-canvas zoom).
   - Videos: plays the clip once while recording the shader output with `MediaRecorder` (MP4/H.264 or WebM depending on the browser), with scale, frame rate, bitrate and optional source audio. Still-frame export is available for videos too.
 
 ## Getting started
@@ -95,7 +95,7 @@ lib/persistence.ts      IndexedDB persistence: stored files + workspace snapshot
 
 ## Notes
 
-- The stack is rendered at the source resolution (capped at 4096 px) into ping-pong targets; the on-canvas blit still only covers the visible window. Heavy painterly filters on large images can be expensive — lower the source size or radius if the preview stutters.
-- Frames whose shaders do not read `params.time` are redrawn only when their inputs or parameters change. Exports use the source resolution times the chosen scale, up to the device's `maxTextureDimension2D`.
+- The stack is rendered at the frame’s width × height (capped at 4096 px for preview) into ping-pong targets; the on-canvas blit still only covers the visible window. Heavy painterly filters on large frames can be expensive — lower the frame size or radius if the preview stutters.
+- Frames whose shaders do not read `params.time` are redrawn only when their inputs or parameters change. Exports use the frame resolution times the chosen scale, up to the device's `maxTextureDimension2D`.
 - Video export records in real time at the display refresh cadence, throttled to the chosen frame rate. Heavy shaders at large sizes may drop below the target rate on slow GPUs; lower the scale in that case.
 - `next build` does not validate WGSL; use `npx vgpu check` (see above) before shipping shader changes.

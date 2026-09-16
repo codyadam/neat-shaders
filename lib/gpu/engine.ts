@@ -232,7 +232,7 @@ export class StudioEngine {
         const frameDoc = this.liveFrame(rt.frameId);
         if (!frameDoc || !asset) continue;
         if (needStack) {
-          const size = this.ensurePing(rt, asset);
+          const size = this.ensurePing(rt, frameDoc.width, frameDoc.height);
           rt.stackOut = this.encodeStack(
             f,
             frameDoc,
@@ -674,8 +674,8 @@ export class StudioEngine {
     return rt;
   }
 
-  private ensurePing(rt: FrameRuntime, asset: AssetRuntime): [number, number] {
-    const size = cappedSize(asset.media.width, asset.media.height, this.maxDim);
+  private ensurePing(rt: FrameRuntime, width: number, height: number): [number, number] {
+    const size = cappedSize(Math.max(1, width), Math.max(1, height), this.maxDim);
     if (!rt.pingA || !rt.pingB || !rt.pingC) {
       destroyTarget(rt.pingA);
       destroyTarget(rt.pingB);
