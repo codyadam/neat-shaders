@@ -19,6 +19,8 @@ interface FrameViewProps {
   clip: ScreenRect | null;
   onPointerDown: (e: React.PointerEvent, frame: Frame) => void;
   interactive: boolean;
+  /** Hide the GPU canvas so the checkerboard host shows (move/resize drag). */
+  placeholder?: boolean;
 }
 
 /**
@@ -35,6 +37,7 @@ export const FrameView = React.memo(function FrameView({
   clip,
   onPointerDown,
   interactive,
+  placeholder = false,
 }: FrameViewProps) {
   const { engine } = useEngine();
   const hostRef = React.useRef<HTMLDivElement>(null);
@@ -48,7 +51,7 @@ export const FrameView = React.memo(function FrameView({
   }, [engine, frame.id]);
 
   React.useLayoutEffect(() => {
-    if (!engine) return;
+    if (!engine || placeholder) return;
     if (!clip || screen.w < 1 || screen.h < 1) {
       engine.setPreviewWindow(frame.id, null);
       return;
@@ -59,7 +62,7 @@ export const FrameView = React.memo(function FrameView({
       clip.w / screen.w,
       clip.h / screen.h,
     ]);
-  }, [engine, frame.id, clip, screen.x, screen.y, screen.w, screen.h]);
+  }, [engine, frame.id, clip, screen.x, screen.y, screen.w, screen.h, placeholder]);
 
   return (
     <div
@@ -84,9 +87,15 @@ export const FrameView = React.memo(function FrameView({
         ref={canvasRef}
         className="absolute select-none"
         style={
-          clip
-            ? { left: clip.x - screen.x, top: clip.y - screen.y, width: clip.w, height: clip.h }
-            : { display: "none" }
+          !clip
+            ? { display: "none" }
+            : {
+                left: clip.x - screen.x,
+                top: clip.y - screen.y,
+                width: clip.w,
+                height: clip.h,
+                visibility: placeholder ? "hidden" : "visible",
+              }
         }
         draggable={false}
       />

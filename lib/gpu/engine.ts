@@ -59,6 +59,7 @@ interface FrameRuntime {
   frameId: string;
   assetId: string;
   shaderKey: string;
+  encodeKey: string;
   layerFx: Map<string, Effect[]>;
   /** One mix pass per layer so stacked mixes in the same submit keep their own uniforms. */
   mixFx: Map<string, Effect>;
@@ -135,6 +136,23 @@ struct StudioVertexOut {
 
 function shaderKeyOf(frame: Frame): string {
   return frame.layers.map((l) => `${l.id}:${l.shaderId}`).join("|");
+}
+
+/** GPU inputs only — position, name and lock do not change the stack. */
+function encodeKeyOf(frame: Frame): string {
+  return `${frame.assetId}:${frame.width}x${frame.height}:` + frame.layers.map((l) =>
+    [
+      l.id,
+      l.shaderId,
+      l.visible ? 1 : 0,
+      l.opacity,
+      l.maskAssetId ?? "",
+      l.maskInvert ? 1 : 0,
+      l.maskFeather,
+      l.maskContrast,
+      JSON.stringify(l.params),
+    ].join(":"),
+  ).join("|");
 }
 
 function frameAnimated(frame: Frame): boolean {
@@ -321,7 +339,11 @@ export class StudioEngine {
         rt.visible = f.visible;
         rt.dirty = true;
       }
-      rt.dirty = true;
+      const encodeKey = encodeKeyOf(f);
+      if (rt.encodeKey !== encodeKey) {
+        rt.encodeKey = encodeKey;
+        rt.dirty = true;
+      }
     }
     for (const [id, rt] of this.frames) {
       if (!liveFrames.has(id)) {
@@ -544,6 +566,7 @@ export class StudioEngine {
       frameId: f.id,
       assetId: f.assetId,
       shaderKey: shaderKeyOf(f),
+      encodeKey: encodeKeyOf(f),
       layerFx: new Map(),
       mixFx: new Map(),
       blitPreview: blits.blitPreview,

@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { FrameView, type ScreenRect } from "@/components/studio/frame-view";
+import { useEngine } from "@/components/studio/engine-context";
 import { useImportFiles } from "@/components/studio/use-import";
 import { stackLabel } from "@/lib/shaders/layers";
 import { useStudio } from "@/lib/store";
@@ -39,7 +40,24 @@ export function CanvasViewport() {
   const dragRef = React.useRef<Drag | null>(null);
   const [dropActive, setDropActive] = React.useState(false);
   const [panning, setPanning] = React.useState(false);
+  const [heldFrameId, setHeldFrameId] = React.useState<string | null>(null);
   const { importFiles } = useImportFiles();
+  const { engine } = useEngine();
+  const heldRef = React.useRef<string | null>(null);
+
+  const holdPreview = (frameId: string) => {
+    if (heldRef.current) return;
+    heldRef.current = frameId;
+    engine?.setPreviewPaused(true);
+    setHeldFrameId(frameId);
+  };
+
+  const releasePreview = () => {
+    if (!heldRef.current) return;
+    heldRef.current = null;
+    engine?.setPreviewPaused(false);
+    setHeldFrameId(null);
+  };
 
   const frames = useStudio((s) => s.frames);
   const assets = useStudio((s) => s.assets);
@@ -158,6 +176,7 @@ export function CanvasViewport() {
       origin: { x: frame.x, y: frame.y, width: frame.width, height: frame.height },
       aspect: frame.width / Math.max(1, frame.height),
     };
+    holdPreview(frame.id);
     ref.current?.setPointerCapture(e.pointerId);
   };
 
@@ -173,6 +192,7 @@ export function CanvasViewport() {
     if (drag.kind === "pan") {
       state.setViewport({ x: drag.originX + (p.x - drag.startX), y: drag.originY + (p.y - drag.startY) });
     } else if (drag.kind === "move") {
+      if (!drag.moved) holdPreview(drag.frameId);
       drag.moved = true;
       let nx = drag.originX + dx;
       let ny = drag.originY + dy;
@@ -207,6 +227,7 @@ export function CanvasViewport() {
     if (dragRef.current) {
       dragRef.current = null;
       setPanning(false);
+      releasePreview();
       if (ref.current?.hasPointerCapture(e.pointerId)) ref.current.releasePointerCapture(e.pointerId);
     }
   };
@@ -275,6 +296,7 @@ export function CanvasViewport() {
             clip={clipToView(screen, viewSize)}
             onPointerDown={onFramePointerDown}
             interactive={!panMode}
+            placeholder={heldFrameId === f.id}
           />
         );
       })}
