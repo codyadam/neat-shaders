@@ -941,6 +941,51 @@ export function defaultParams(def: ShaderDefinition): Record<string, ParamValue>
   return out;
 }
 
+function randomStepped(min: number, max: number, step: number): number {
+  if (!(step > 0) || max <= min) return min;
+  const n = Math.round((max - min) / step);
+  const i = Math.floor(Math.random() * (n + 1));
+  return Number((min + i * step).toFixed(6));
+}
+
+function shuffleString(value: string): string {
+  const chars = [...value];
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join("");
+}
+
+export function randomizeParam(def: ParamDef): ParamValue {
+  switch (def.type) {
+    case "float":
+      return randomStepped(def.min, def.max, def.step);
+    case "int":
+      return randomStepped(def.min, def.max, def.step ?? 1);
+    case "vec2":
+      return [randomStepped(def.min, def.max, def.step), randomStepped(def.min, def.max, def.step)];
+    case "bool":
+      return Math.random() < 0.5;
+    case "color":
+      return [Math.random(), Math.random(), Math.random()];
+    case "select": {
+      const option = def.options[Math.floor(Math.random() * def.options.length)];
+      return option?.value ?? def.default;
+    }
+    case "string": {
+      const source = def.default.length > 0 ? def.default : "@#S08Xx+=-;:,. ";
+      return shuffleString(source);
+    }
+  }
+}
+
+export function randomizeParams(def: ShaderDefinition): Record<string, ParamValue> {
+  const out: Record<string, ParamValue> = {};
+  for (const p of def.params) out[p.key] = randomizeParam(p);
+  return out;
+}
+
 export function isParamEnabled(def: ParamDef, values: Record<string, ParamValue>): boolean {
   if (!def.enabledWhen) return true;
   const rules = Array.isArray(def.enabledWhen) ? def.enabledWhen : [def.enabledWhen];
