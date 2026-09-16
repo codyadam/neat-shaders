@@ -71,8 +71,14 @@ interface FrameRuntime {
   blitOffscreen: Effect;
   pingA?: Target;
   pingB?: Target;
+  /**
+   * Extra ping so a later pass (or mix) can keep sampling `orig` (the layer input)
+   * without writing over it. Two-buffer ping-pong aliases dest with `orig` on even
+   * passes — Brand overlay after Tint cleared the previous result to transparent.
+   */
+  pingC?: Target;
   pingSize: [number, number];
-  /** Last stack encode written into ping A/B; reused when only the visible window moves. */
+  /** Last stack encode written into ping A/B/C; reused when only the visible window moves. */
   stackOut?: Target;
   canvas?: HTMLCanvasElement;
   host?: HTMLElement;
@@ -227,7 +233,17 @@ export class StudioEngine {
         if (!frameDoc || !asset) continue;
         if (needStack) {
           const size = this.ensurePing(rt, asset);
-          rt.stackOut = this.encodeStack(f, frameDoc, rt, rt.pingA!, rt.pingB!, size, this.bypassShaders, t);
+          rt.stackOut = this.encodeStack(
+            f,
+            frameDoc,
+            rt,
+            rt.pingA!,
+            rt.pingB!,
+            rt.pingC!,
+            size,
+            this.bypassShaders,
+            t,
+          );
           rt.dirty = false;
         }
         const out = rt.stackOut;
@@ -374,18 +390,20 @@ export class StudioEngine {
     this.uploadVideoFrames();
     const pingA = target(this.gpu, { size, format: "rgba8unorm", label: "export-a" });
     const pingB = target(this.gpu, { size, format: "rgba8unorm", label: "export-b" });
+    const pingC = target(this.gpu, { size, format: "rgba8unorm", label: "export-c" });
     try {
       const frameDoc = this.liveFrame(frameId);
       const rt = this.frames.get(frameId);
       if (!frameDoc || !rt) throw new Error("Frame is not ready on the GPU yet.");
       let out: Target = pingA;
       frame(this.gpu, (f) => {
-        out = this.encodeStack(f, frameDoc, rt, pingA, pingB, size, false, this.time.time);
+        out = this.encodeStack(f, frameDoc, rt, pingA, pingB, pingC, size, false, this.time.time);
       });
       return await out.read();
     } finally {
       destroyTarget(pingA);
       destroyTarget(pingB);
+      destroyTarget(pingC);
     }
   }
 
@@ -408,9 +426,10 @@ export class StudioEngine {
     const size = exportSurface.size as [number, number];
     const pingA = target(this.gpu, { size, format: "rgba8unorm", label: "export-va" });
     const pingB = target(this.gpu, { size, format: "rgba8unorm", label: "export-vb" });
+    const pingC = target(this.gpu, { size, format: "rgba8unorm", label: "export-vc" });
     try {
       frame(this.gpu, (f) => {
-        const out = this.encodeStack(f, frameDoc, rt, pingA, pingB, size, false, this.time.time);
+        const out = this.encodeStack(f, frameDoc, rt, pingA, pingB, pingC, size, false, this.time.time);
         this.exportBlit.set({
           src: out.color,
           samp: this.linearSampler,
@@ -421,6 +440,7 @@ export class StudioEngine {
     } finally {
       destroyTarget(pingA);
       destroyTarget(pingB);
+      destroyTarget(pingC);
     }
   }
 
@@ -545,6 +565,7 @@ export class StudioEngine {
     rt.surface?.dispose();
     destroyTarget(rt.pingA);
     destroyTarget(rt.pingB);
+    destroyTarget(rt.pingC);
     rt.stackOut = undefined;
     rt.layerFx.clear();
     rt.mixFx.clear();
@@ -655,9 +676,13 @@ export class StudioEngine {
 
   private ensurePing(rt: FrameRuntime, asset: AssetRuntime): [number, number] {
     const size = cappedSize(asset.media.width, asset.media.height, this.maxDim);
-    if (!rt.pingA || !rt.pingB) {
+    if (!rt.pingA || !rt.pingB || !rt.pingC) {
+      destroyTarget(rt.pingA);
+      destroyTarget(rt.pingB);
+      destroyTarget(rt.pingC);
       rt.pingA = target(this.gpu, { size, format: "rgba8unorm", label: `${rt.frameId}:a` });
       rt.pingB = target(this.gpu, { size, format: "rgba8unorm", label: `${rt.frameId}:b` });
+      rt.pingC = target(this.gpu, { size, format: "rgba8unorm", label: `${rt.frameId}:c` });
       rt.pingSize = size;
       rt.stackOut = undefined;
       return size;
@@ -665,6 +690,7 @@ export class StudioEngine {
     if (rt.pingSize[0] !== size[0] || rt.pingSize[1] !== size[1]) {
       rt.pingA.resize(size);
       rt.pingB.resize(size);
+      rt.pingC.resize(size);
       rt.pingSize = size;
       rt.stackOut = undefined;
     }
@@ -677,6 +703,7 @@ export class StudioEngine {
     rt: FrameRuntime,
     pingA: Target,
     pingB: Target,
+    pingC: Target,
     size: [number, number],
     bypass: boolean,
     time: number,
@@ -698,7 +725,13 @@ export class StudioEngine {
     let read: Texture = asset.texture;
     let last: Target | null = null;
 
-    const other = (current: Target | null): Target => (current === pingA ? pingB : pingA);
+    /** Next write target that is not `src` (`last`) and not a protected `orig` buffer. */
+    const pickDest = (protect: Target | null): Target => {
+      for (const t of [pingA, pingB, pingC]) {
+        if (t !== last && t !== protect) return t;
+      }
+      return pingA;
+    };
 
     for (const layer of layers) {
       const shader = getShader(layer.shaderId);
@@ -707,8 +740,14 @@ export class StudioEngine {
       const layerInput = read;
       if (!effects || effects.length !== passes.length) continue;
 
+      const samplesOrig =
+        needsMix(layer) || passes.some((pass) => hasBinding(wgslOf(pass), "orig"));
+      // `last` is the ping that holds the previous layer (or null for media). Keep it
+      // if a later pass or mix still needs to sample that image as `orig`.
+      const protectOrig = samplesOrig ? last : null;
+
       for (let i = 0; i < passes.length; i++) {
-        const dest = other(last);
+        const dest = pickDest(protectOrig);
         const wgsl = wgslOf(passes[i]);
         const bag: Record<string, unknown> = {
           src: read,
@@ -732,7 +771,7 @@ export class StudioEngine {
       }
 
       if (needsMix(layer)) {
-        const dest = other(last);
+        const dest = pickDest(protectOrig);
         const maskRt = layer.maskAssetId ? this.assets.get(layer.maskAssetId) : undefined;
         let mix = rt.mixFx.get(layer.id);
         if (!mix) {
