@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ClipboardCopy, ClipboardPaste, Download, Link2, Link2Off, Pause, Play, Plus, Repeat, RotateCcw, Scan, Upload } from "lucide-react";
+import { ClipboardCopy, ClipboardPaste, Dices, Download, Link2, Link2Off, Pause, Play, Plus, Repeat, RotateCcw, Scan, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -174,7 +174,8 @@ function ShaderStackSection({ frame, layer }: { frame: Frame; layer: ShaderLayer
 function LayerEditor({ frame, layer }: { frame: Frame; layer: ShaderLayer }) {
   const shader = getShader(layer.shaderId);
   const assets = useStudio((s) => s.assets);
-  const { setLayerShader, setLayerParam, setLayerParams, resetLayerParams, updateLayer } = useStudio.getState();
+  const { setLayerShader, setLayerParam, setLayerParams, resetLayerParams, randomizeLayerParams, updateLayer } =
+    useStudio.getState();
   const { openPicker, busy } = useImportFiles();
   const charsetPreset = Number(layer.params.charset_preset ?? 0);
   const colorMapPreset = Number(layer.params.preset ?? 0);
@@ -225,14 +226,24 @@ function LayerEditor({ frame, layer }: { frame: Frame; layer: ShaderLayer }) {
     <div className="space-y-3 border-t border-border/70 pt-3">
       <div className="flex h-6 items-center justify-between">
         <h4 className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">Shader</h4>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon-xs" onClick={() => resetLayerParams(frame.id, layer.id)}>
-              <RotateCcw />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="left">Reset parameters</TooltipContent>
-        </Tooltip>
+        <div className="flex items-center gap-0.5">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon-xs" onClick={() => randomizeLayerParams(frame.id, layer.id)}>
+                <Dices />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left">Randomize parameters</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon-xs" onClick={() => resetLayerParams(frame.id, layer.id)}>
+                <RotateCcw />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left">Reset parameters</TooltipContent>
+          </Tooltip>
+        </div>
       </div>
       <ShaderCombobox value={layer.shaderId} onChange={(id) => setLayerShader(frame.id, layer.id, id)} />
       <p className="text-[11px] leading-snug text-muted-foreground">{shader.description}</p>

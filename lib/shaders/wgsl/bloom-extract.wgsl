@@ -20,5 +20,5 @@ struct Params {
   let soft = clamp(lum - params.threshold + knee, 0.0, 2.0 * knee);
   let contrib = max(lum - params.threshold, soft * soft / (4.0 * knee));
   let w = contrib / max(lum, 1e-4);
-  return vec4f(c.rgb * w, c.a);
+  return vec4f(c.rgb * w, 1.0);
 }

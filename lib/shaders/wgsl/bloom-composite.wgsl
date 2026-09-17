@@ -17,5 +17,7 @@ struct Params {
 @fragment fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
   let base = textureSampleLevel(orig, samp, uv, 0.0);
   let bloom = textureSampleLevel(src, samp, uv, 0.0);
-  return vec4f(base.rgb + bloom.rgb * params.strength, base.a);
+  // Opaque: the preview canvas is premultiplied, so inheriting a transparent
+  // `orig` (or a cleared ping) punched through to the checkerboard host.
+  return vec4f(base.rgb + bloom.rgb * params.strength, 1.0);
 }

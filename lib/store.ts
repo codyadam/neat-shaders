@@ -4,7 +4,7 @@ import { create } from "zustand";
 import type { Asset, Frame, ShaderLayer, Tool, Viewport } from "@/lib/types";
 import { DEFAULT_LAYER, MAX_LAYERS, sanitizeLayer } from "@/lib/shaders/layers";
 import { materializeStack, type StackClipboardLayer } from "@/lib/shaders/stack-clipboard";
-import { DEFAULT_SHADER_ID, defaultParams, getShader, type ParamValue } from "@/lib/shaders/registry";
+import { DEFAULT_SHADER_ID, defaultParams, getShader, randomizeParams, type ParamValue } from "@/lib/shaders/registry";
 
 export const MIN_ZOOM = 0.02;
 export const MAX_ZOOM = 64;
@@ -52,6 +52,7 @@ interface StudioState {
   setLayerParam: (frameId: string, layerId: string, key: string, value: ParamValue) => void;
   setLayerParams: (frameId: string, layerId: string, patch: Record<string, ParamValue>) => void;
   resetLayerParams: (frameId: string, layerId: string) => void;
+  randomizeLayerParams: (frameId: string, layerId: string) => void;
   updateLayer: (frameId: string, layerId: string, patch: Partial<Omit<ShaderLayer, "id">>) => void;
   removeFrame: (id: string) => void;
   duplicateFrame: (id: string) => string | null;
@@ -281,6 +282,13 @@ export const useStudio = create<StudioState>((set, get) => ({
     set((s) => ({
       frames: mapFrame(s.frames, frameId, (f) =>
         mapLayer(f, layerId, (l) => ({ ...l, params: defaultParams(getShader(l.shaderId)) })),
+      ),
+    })),
+
+  randomizeLayerParams: (frameId, layerId) =>
+    set((s) => ({
+      frames: mapFrame(s.frames, frameId, (f) =>
+        mapLayer(f, layerId, (l) => ({ ...l, params: randomizeParams(getShader(l.shaderId)) })),
       ),
     })),
 
