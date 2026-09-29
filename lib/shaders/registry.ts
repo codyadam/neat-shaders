@@ -6,8 +6,25 @@ import litSurfaceSource from "./wgsl/lit-surface.wgsl";
 import passthroughSource from "./wgsl/passthrough.wgsl";
 import pixelateSource from "./wgsl/pixelate.wgsl";
 import { EXTRA_SHADERS } from "./extra";
+import {
+  cloneParamDefault,
+  colorRangeUniforms,
+  curveUniforms,
+  hueToRgb,
+  type ColorRangeValue,
+  type CurvePoint,
+} from "./param-values";
 
-export type ParamValue = number | boolean | string | [number, number] | [number, number, number];
+export type { ColorRangeValue, CurvePoint };
+
+export type ParamValue =
+  | number
+  | boolean
+  | string
+  | [number, number]
+  | [number, number, number]
+  | CurvePoint[]
+  | ColorRangeValue;
 
 export type ShaderGroup = "Painterly" | "Stylized" | "ASCII" | "Blur" | "Color" | "Atmosphere" | "Utility";
 
@@ -21,6 +38,8 @@ type ParamMeta = {
   description?: string;
   /** Inspector collapsible group. Consecutive params with the same title share a header. */
   section?: string;
+  /** Start this section collapsed. Read from the first param in the group. */
+  sectionCollapsed?: boolean;
   /** Disable the control unless the referenced param matches (a string means that bool is on). */
   enabledWhen?: ParamEnabledWhen | ParamEnabledWhen[];
 };
@@ -67,6 +86,20 @@ export type ParamDef =
       type: "string";
       default: string;
       placeholder?: string;
+    })
+  | (ParamMeta & {
+      /** Piecewise tone curve. Packed as `${key}_n` plus four vec4 knots. */
+      type: "curve";
+      default: CurvePoint[];
+      maxPoints?: number;
+    })
+  | (ParamMeta & {
+      /**
+       * Hue window plus a display color.
+       * Packed as `${key}_color` (vec3) and `${key}_window` (start, end, softness).
+       */
+      type: "colorRange";
+      default: ColorRangeValue;
     });
 
 /** One draw in a shader that needs more than a single fragment pass (bloom, separable blur, anisotropic Kuwahara). */
@@ -935,9 +968,7 @@ export function isAnimated(def: ShaderDefinition): boolean {
 
 export function defaultParams(def: ShaderDefinition): Record<string, ParamValue> {
   const out: Record<string, ParamValue> = {};
-  for (const p of def.params) {
-    out[p.key] = Array.isArray(p.default) ? ([...p.default] as ParamValue) : p.default;
-  }
+  for (const p of def.params) out[p.key] = cloneParamDefault(p);
   return out;
 }
 
@@ -976,6 +1007,26 @@ export function randomizeParam(def: ParamDef): ParamValue {
     case "string": {
       const source = def.default.length > 0 ? def.default : "@#S08Xx+=-;:,. ";
       return shuffleString(source);
+    }
+    case "curve": {
+      const count = 4;
+      const points: CurvePoint[] = [{ x: 0, y: Math.random() * 0.15 }];
+      for (let i = 1; i < count - 1; i++) {
+        const x = i / (count - 1);
+        points.push({ x, y: Math.min(1, Math.max(0, x + (Math.random() - 0.5) * 0.35)) });
+      }
+      points.push({ x: 1, y: Math.min(1, Math.max(0.85, 0.85 + Math.random() * 0.15)) });
+      return points;
+    }
+    case "colorRange": {
+      const hue = Math.random();
+      const half = 0.04 + Math.random() * 0.08;
+      return {
+        color: hueToRgb(hue),
+        start: (hue - half + 1) % 1,
+        end: (hue + half) % 1,
+        softness: 0.02 + Math.random() * 0.04,
+      };
     }
   }
 }
@@ -1033,10 +1084,18 @@ export function toUniformValues(
         out[p.key] = Number(value);
         break;
       case "vec2":
-      case "color":
-        out[p.key] = Array.isArray(value) ? [...value] : [...p.default];
+      case "color": {
+        const tuple = Array.isArray(value) && value.every((n) => typeof n === "number") ? value : p.default;
+        out[p.key] = [...tuple];
         break;
+      }
       case "string":
+        break;
+      case "curve":
+        Object.assign(out, curveUniforms(p.key, value));
+        break;
+      case "colorRange":
+        Object.assign(out, colorRangeUniforms(p.key, value, p.default));
         break;
     }
   }

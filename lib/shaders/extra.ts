@@ -24,6 +24,7 @@ import snnSource from "./wgsl/snn.wgsl";
 import tintSource from "./wgsl/tint.wgsl";
 import tomitaTsujiSource from "./wgsl/tomita-tsuji.wgsl";
 import vignetteSource from "./wgsl/vignette.wgsl";
+import { TINY_LIGHTROOM } from "./tiny-lightroom";
 
 export const CHARSET_PRESETS: { value: number; label: string; chars: string }[] = [
   { value: 0, label: "Standard", chars: "@#S08Xx+=-;:,. " },
@@ -780,6 +781,7 @@ export const EXTRA_SHADERS: ShaderDefinition[] = [
       },
     ],
   },
+  TINY_LIGHTROOM,
   {
     id: "hue",
     name: "Hue",

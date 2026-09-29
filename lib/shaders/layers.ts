@@ -1,3 +1,4 @@
+import { coerceParamValue } from "@/lib/shaders/param-values";
 import { DEFAULT_SHADER_ID, defaultParams, getShader } from "@/lib/shaders/registry";
 import type { Frame, ShaderLayer } from "@/lib/types";
 
@@ -26,7 +27,7 @@ export function sanitizeLayer(layer: Partial<ShaderLayer> & { id: string }): Sha
   const params = { ...defaultParams(shader) };
   if (layer.params) {
     for (const p of shader.params) {
-      if (p.key in layer.params) params[p.key] = layer.params[p.key];
+      if (p.key in layer.params) params[p.key] = coerceParamValue(p, layer.params[p.key]);
     }
   }
   return {

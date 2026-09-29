@@ -7,6 +7,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { ColorRangeControl } from "@/components/studio/color-range-control";
+import { CurveEditor } from "@/components/studio/curve-editor";
+import { normalizeColorRange, normalizeCurve, type ColorRangeValue, type CurvePoint } from "@/lib/shaders/param-values";
 import type { ParamDef, ParamValue } from "@/lib/shaders/registry";
 import { cn } from "@/lib/utils";
 
@@ -241,7 +244,11 @@ export function ParamControl({ def, value, onChange, disabled }: ParamControlPro
       return (
         <Vec2Control
           def={def}
-          value={Array.isArray(value) && value.length === 2 ? value : def.default}
+          value={
+            Array.isArray(value) && value.length === 2 && typeof value[0] === "number" && typeof value[1] === "number"
+              ? [value[0], value[1]]
+              : def.default
+          }
           onChange={onChange}
           disabled={disabled}
         />
@@ -287,8 +294,33 @@ export function ParamControl({ def, value, onChange, disabled }: ParamControlPro
           />
         </div>
       );
+    case "curve":
+      return (
+        <CurveEditor
+          label={def.label}
+          description={def.description}
+          disabled={disabled}
+          value={normalizeCurve(value, def.default)}
+          onChange={(points: CurvePoint[]) => onChange(points)}
+        />
+      );
+    case "colorRange": {
+      const range = normalizeColorRange(value, def.default);
+      return (
+        <ColorRangeControl
+          label={def.label}
+          fallback={def.default}
+          disabled={disabled}
+          value={range}
+          onChange={(next: ColorRangeValue) => onChange(next)}
+        />
+      );
+    }
     case "color": {
-      const rgb = Array.isArray(value) && value.length === 3 ? value : def.default;
+      const rgb =
+        Array.isArray(value) && value.length === 3 && value.every((n) => typeof n === "number")
+          ? ([value[0], value[1], value[2]] as [number, number, number])
+          : def.default;
       const hex = rgbToHex(rgb);
       return (
         <div className={cn("flex items-center justify-between", disabled && "opacity-50")}>

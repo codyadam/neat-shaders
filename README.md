@@ -12,13 +12,13 @@ Built with Next.js (App Router), React, Tailwind CSS, shadcn/ui and [vgpu](https
 - Frames: each imported image or video becomes a frame you can select, move, resize (aspect-locked corner handles), rename, reorder, hide and lock. The frame’s width and height are the working pixel resolution shaders run at (the media is sampled up or down into that grid); on-canvas zoom only changes how large that buffer looks. Import by dropping files on the canvas, pasting an image (⌘/Ctrl+V — screenshots and copied bitmaps included), or the Import button (⌘/Ctrl+I).
 - Shader stack: each frame has an ordered list of shaders (up to 16). The first visible layer reads the media; each next layer reads the previous output. Nested under the frame in the layers panel, like Figma. Copy a stack as JSON with ⌘/Ctrl+C when a frame is selected (or the clipboard button on the frame / stack footer) and paste it onto another frame with ⌘/Ctrl+V. Per layer: mute, opacity, and an optional luma mask from another asset (invert / feather / contrast) — a depth map on a blur layer gives a depth-of-field look.
 - Assets panel: imported media, drag an asset onto the canvas to make another frame from it.
-- Inspector: frame geometry, media info, video playback controls (play/pause, loop, scrub), searchable shader combobox and typed parameter controls (float, int, vec2, bool, color, select, string).
+- Inspector: frame geometry, media info, video playback controls (play/pause, loop, scrub), searchable shader combobox and typed parameter controls (float, int, vec2, bool, color, color range, curve, select, string).
 - Shaders (WGSL, driven through vgpu effects). Multipass shaders (bloom, separable blur, anisotropic Kuwahara) run as ping-pong GPU passes.
   - **Painterly**: Kuwahara (8-sector), classic 4-quadrant Kuwahara, Papari (circular sectors + polynomial weights + inverse-variance blend), anisotropic Kuwahara (structure tensor), Tomita–Tsuji, symmetric nearest neighbour.
   - **Stylized**: Pixelate, Dot grid, Halftone, Lit surface, Head on display (survey marks, distance mesh with markers, circle chain, colour-mapped mosaic zones), Pixel sort (threshold / edges / random / waves interval masks; optional Blend mask; horizontal, vertical, HV and VH).
   - **ASCII**: brightness-to-glyph ramp with presets or a custom character set, source colour or ink, contrast, invert, coverage, edge emphasis.
   - **Blur**: Gaussian (separable), box, Dual Kawase, motion / directional.
-  - **Color**: Hue, contrast, saturation, grayscale, color map (palette remaps with WeatherNext / thermal / sunset / ember / twilight / mono / custom ramps), tint, opacity.
+  - **Color**: Tiny Lightroom (exposure, tone, white balance, curves, per-hue color ranges, color grade, clarity, dehaze, vignette, grain), hue, contrast, saturation, grayscale, color map (palette remaps with WeatherNext / thermal / sunset / ember / twilight / mono / custom ramps), tint, opacity.
   - **Atmosphere**: Grain (optional animated), vignette, bloom (extract → blur → composite).
   - **Original**: passthrough.
 - Local persistence: imported files are stored in the browser (IndexedDB) together with the frames, viewport and selection, and restored on the next visit, so closing the tab does not lose progress. Autosave is debounced and flushed when the page is hidden; the header shows the save state, and the trash button in the toolbar clears the workspace (including the saved copy). Older single-shader workspaces are migrated to a one-layer stack.
@@ -73,7 +73,7 @@ Import the repository in Vercel; the Next.js preset is detected automatically an
 
    Multipass shaders list `passes` in the registry. Pass 0 reads the layer input; each later pass reads the previous output. Constants such as a blur axis can be merged into `params` per pass.
 
-2. Register it in `lib/shaders/registry.ts` (built-ins) or `lib/shaders/extra.ts` with a `params` schema and a `group`. Each entry maps 1:1 onto a `Params` field: `float` → `f32`, `int` → `i32`, `select` (dropdown of labelled options) → `i32`, `bool` → `u32` (0/1), `vec2` → `vec2f`, `color` → `vec3f`. `string` params stay on the CPU (ASCII character ramps).
+2. Register it in `lib/shaders/registry.ts` (built-ins) or `lib/shaders/extra.ts` with a `params` schema and a `group`. Each scalar entry maps 1:1 onto a `Params` field: `float` → `f32`, `int` → `i32`, `select` (dropdown of labelled options) → `i32`, `bool` → `u32` (0/1), `vec2` → `vec2f`, `color` → `vec3f`. `curve` packs `${key}_n` plus four `vec4f` knots (`${key}_0`…`${key}_3`). `colorRange` packs `${key}_color` (`vec3f`) and `${key}_window` (`vec3f`: start, end, softness). `string` params stay on the CPU (ASCII character ramps).
 
    Animated shaders read `params.time` (seconds since the engine started). Keep them stateless in `time` — e.g. derive loops with `fract(time / period)` — so still exports and video capture render the same thing the preview shows.
 
