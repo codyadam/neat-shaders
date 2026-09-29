@@ -249,7 +249,11 @@ function LayerEditor({ frame, layer }: { frame: Frame; layer: ShaderLayer }) {
       <p className="text-[11px] leading-snug text-muted-foreground">{shader.description}</p>
       <div className="space-y-3 pt-1">
         {paramGroups.map((group) => (
-          <ParamGroup key={group.title || "parameters"} title={group.title}>
+          <ParamGroup
+            key={group.title || "parameters"}
+            title={group.title}
+            defaultOpen={!group.params.some((p) => p.sectionCollapsed)}
+          >
             {group.params.map(renderParam)}
           </ParamGroup>
         ))}
